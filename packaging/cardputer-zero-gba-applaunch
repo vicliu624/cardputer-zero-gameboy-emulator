@@ -1,0 +1,49 @@
+#!/bin/sh
+set -eu
+
+case "$0" in
+    */*) script_dir=${0%/*} ;;
+    *) script_dir=/usr/lib/cardputer-zero-gba ;;
+esac
+
+settings_root=${CARDPUTER_ZERO_GBA_SETTINGS_ROOT:-${HOME:-/home/pi}/.config/cardputer-zero-gba}
+
+load_env_file()
+{
+    env_file=$1
+    [ -r "$env_file" ] || return 0
+    set -a
+    . "$env_file"
+    set +a
+}
+
+load_env_file /etc/cardputer-zero-gba.env
+load_env_file "$settings_root/cardputer-zero-gba.env"
+
+backend=${CARDPUTER_ZERO_GBA_DISPLAY_BACKEND:-auto}
+
+case "$backend" in
+    wayland|labwc)
+        : "${SDL_VIDEODRIVER:=wayland}"
+        ;;
+    auto|"")
+        if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+            : "${SDL_VIDEODRIVER:=wayland}"
+        fi
+        ;;
+    x11)
+        : "${SDL_VIDEODRIVER:=x11}"
+        ;;
+    dummy)
+        : "${SDL_VIDEODRIVER:=dummy}"
+        ;;
+    *)
+        echo "cardputer-zero-gba-applaunch: unsupported CARDPUTER_ZERO_GBA_DISPLAY_BACKEND=$backend" >&2
+        exit 2
+        ;;
+esac
+
+export SDL_VIDEO_WAYLAND_WMCLASS=io.github.vicliu624.cardputer-zero-gba
+export SDL_VIDEO_X11_WMCLASS=io.github.vicliu624.cardputer-zero-gba
+export SDL_VIDEODRIVER
+exec "$script_dir/cardputer-zero-gba" --kiosk "$@"

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=GBE
+Comment=Game Boy Advance emulator for the Cardputer Zero
+Exec=/usr/lib/cardputer-zero-gba/cardputer-zero-gba-applaunch
+Icon=share/images/cardputer-zero-gba.png
+Terminal=false
+Categories=Game;Emulator;
+StartupNotify=false
+X-Zero-AppId=io.github.vicliu624.cardputer-zero-gba
+X-Zero-Display=wayland

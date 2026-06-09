@@ -1,0 +1,13 @@
+build/
+build-*/
+out/
+rom/
+.vs/
+.cache/
+*.user
+*.suo
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll

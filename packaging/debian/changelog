@@ -1,0 +1,5 @@
+cardputer-zero-gba (0.1.0-1) unstable; urgency=medium
+
+  * Initial Cardputer Zero APPLaunch Debian package.
+
+ -- Cardputer Zero GBA Maintainers <dev@example.com>  Tue, 09 Jun 2026 00:00:00 +0800

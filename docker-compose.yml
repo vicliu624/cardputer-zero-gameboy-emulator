@@ -1,0 +1,12 @@
+services:
+  package-arm64:
+    image: debian:bookworm
+    pull_policy: never
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      CZ_GBA_BUILD_JOBS: ${CZ_GBA_BUILD_JOBS:-2}
+    command:
+      - bash
+      - /workspace/packaging/docker/arm64/package-arm64.sh

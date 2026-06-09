@@ -1,0 +1,33 @@
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_NAME "cardputer-zero-gba")
+set(CPACK_PACKAGE_FILE_NAME "@CZ_GBA_CPACK_PACKAGE_FILE_NAME@")
+set(CPACK_PACKAGE_VENDOR "Cardputer Zero")
+set(CPACK_PACKAGE_CONTACT "Cardputer Zero GBA Maintainers")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "@PROJECT_DESCRIPTION@")
+set(CPACK_PACKAGE_DESCRIPTION
+    "Cardputer Zero GBA is a Game Boy Advance emulator frontend for the Cardputer Zero portable Linux device. It packages a libmgba-based runtime, SDL2 presentation adapter, fixed 320x170 pixel UI assets, and a Cardputer Zero APPLaunch desktop entry.")
+set(CPACK_PACKAGE_VERSION "@PROJECT_VERSION@")
+set(CPACK_PACKAGE_VERSION_MAJOR "@PROJECT_VERSION_MAJOR@")
+set(CPACK_PACKAGE_VERSION_MINOR "@PROJECT_VERSION_MINOR@")
+set(CPACK_PACKAGE_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
+set(CPACK_RESOURCE_FILE_LICENSE "@CZ_GBA_CPACK_SOURCE_DIR@/LICENSE")
+set(CPACK_RESOURCE_FILE_README "@CZ_GBA_CPACK_SOURCE_DIR@/README.md")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+set(CPACK_OUTPUT_FILE_PREFIX "@CZ_GBA_CPACK_BUILD_DIR@")
+set(CPACK_INSTALL_CMAKE_PROJECTS "@CZ_GBA_CPACK_BUILD_DIR@;@PROJECT_NAME@;ALL;/")
+set(CPACK_CMAKE_GENERATOR "@CMAKE_GENERATOR@")
+
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+@CZ_GBA_CPACK_ARCHITECTURE_LINE@
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Cardputer Zero GBA Maintainers")
+set(CPACK_DEBIAN_PACKAGE_SECTION "games")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6, libstdc++6, libgcc-s1, libsdl2-2.0-0, libsdl2-ttf-2.0-0, fonts-noto-cjk | fonts-droid-fallback")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+    "@CZ_GBA_CPACK_SOURCE_DIR@/packaging/debian/postinst;@CZ_GBA_CPACK_SOURCE_DIR@/packaging/debian/postrm")
+set(CPACK_DEBIAN_PACKAGE_DESCRIPTION
+    "Game Boy Advance emulator frontend for Cardputer Zero.
+ It uses libmgba as the emulation core, SDL2 as the Linux presentation
+ adapter, and a fixed 320x170 pixel UI designed for APPLaunch on the
+ Cardputer Zero portable Linux device.")

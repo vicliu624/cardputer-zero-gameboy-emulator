@@ -1,0 +1,3 @@
+Built-in 5x7 ASCII pixel font. The runtime currently links this font into the
+binary through src/render/font_5x7.cpp; this file is installed so the package
+has an explicit font asset root for future theme/font overrides.

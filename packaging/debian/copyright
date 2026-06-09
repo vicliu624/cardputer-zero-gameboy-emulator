@@ -1,0 +1,30 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Source: https://github.com/vicliu624/cardputer-zero-gba
+
+Files: *
+Copyright: 2026 Cardputer Zero GBA contributors
+License: MIT
+
+Files: extern/mgba/*
+Copyright: mGBA contributors
+License: MPL-2.0
+
+Files: extern/SDL/*
+Copyright: SDL contributors
+License: Zlib
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files to deal in the Software
+ without restriction, including without limitation the rights to use, copy,
+ modify, merge, publish, distribute, sublicense, and/or sell copies of the
+ Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the conditions in the project LICENSE file.
+
+License: MPL-2.0
+ This package includes mGBA source code under the Mozilla Public License 2.0.
+ See extern/mgba/LICENSE for the complete terms.
+
+License: Zlib
+ This package includes SDL source code under the zlib license. See
+ extern/SDL/LICENSE.txt for the complete terms.

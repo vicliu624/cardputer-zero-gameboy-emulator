@@ -1,0 +1,28 @@
+Source: cardputer-zero-gba
+Section: games
+Priority: optional
+Maintainer: Cardputer Zero GBA Maintainers <dev@example.com>
+Standards-Version: 4.7.0
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake,
+ ninja-build,
+ pkg-config,
+ libsdl2-dev
+Rules-Requires-Root: no
+
+Package: cardputer-zero-gba
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ libc6,
+ libstdc++6,
+ libgcc-s1,
+ libsdl2-2.0-0,
+ libsdl2-ttf-2.0-0,
+ fonts-noto-cjk | fonts-droid-fallback
+Description: Game Boy Advance emulator frontend for Cardputer Zero
+ A Game Boy Advance emulator frontend designed for the Cardputer Zero
+ 320x170 display. It uses libmgba as the emulation core and provides
+ an APPLaunch desktop entry for the Cardputer Zero shell.

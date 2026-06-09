@@ -1,0 +1,23 @@
+{
+  "id": "minimal",
+  "name": "Framed Pixel Minimal",
+  "canvas": {
+    "width": 320,
+    "height": 170,
+    "format": "XRGB8888"
+  },
+  "viewport": {
+    "x": 40,
+    "y": 0,
+    "width": 240,
+    "height": 160
+  },
+  "palette": {
+    "background": "#070a0d",
+    "panel": "#0d1216",
+    "edge": "#464d5c",
+    "accent": "#9a8fcd",
+    "success": "#60e85c",
+    "info": "#3aaef0"
+  }
+}
