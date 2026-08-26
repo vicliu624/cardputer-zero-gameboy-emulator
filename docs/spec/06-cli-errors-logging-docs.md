@@ -9,6 +9,7 @@
 --version
 --scale 1
 --fullscreen
+--device-profile <cardputer-zero|tdvp-k230>
 --kiosk
 --no-audio
 --rom <path>
@@ -34,6 +35,7 @@
 cardputer-zero-gba --scale 1
 cardputer-zero-gba --rom ~/Games/GBA/test.gba
 SDL_VIDEODRIVER=wayland cardputer-zero-gba --fullscreen
+cardputer-zero-gba --device-profile tdvp-k230
 ```
 
 ## SDL Platform

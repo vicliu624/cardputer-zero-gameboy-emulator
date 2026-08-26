@@ -21,6 +21,30 @@ fixed 320x170 undecorated presentation surface, which is the default APPLaunch
 path on the Cardputer Zero. `--fullscreen` is reserved for explicit manual
 fullscreen testing. `--scale 1` is accepted only as a compatibility option.
 
+## TDVP K230 / RISC-V 64 Package
+
+The same frontend also has a TDVP K230 presentation profile for the
+Buildroot 2025.02.1 `riscv64-lp64d` platform. Its physical panel runs in
+landscape at 1232x568. K230 uses its own 410x189 application layout: a native
+240x160 GBA frame is placed between expanded information/control rails and
+passed through the DRM/KMS adapter at a 3x integer scale. The resulting game
+viewport is 720x480 physical pixels, and the full application canvas occupies
+1230x567 at `(1,0)` on the panel. This preserves crisp pixels without fbdev;
+the adapter captures and restores the prior KMS CRTC state.
+
+Run it manually on a compatible device with:
+
+```sh
+cardputer-zero-gba --device-profile tdvp-k230
+```
+
+The TDVP package maps the same keyboard and arrow-key controls as the
+Cardputer profile. Its visible F1–F5 row is also available as MENU, SAVE,
+LOAD, FAST, and CHEATS respectively. The package is built only against the
+exact `tdvp-k230-r1` SDK/sysroot and published as an ABI-gated `.ipk`; see
+`embedded-opkg-feed/packages/tdvp-cardputer-zero-gba/README.md` when both
+repositories are checked out side by side.
+
 The ROM browser scans local `rom/`, local `roms/`, and the user data ROM
 directory:
 
@@ -35,6 +59,10 @@ does not install or remove user ROMs or saves.
 While playing, the five physical keys under the screen map left-to-right to
 Menu, Save, Load, Fast, and Cheats. On a keyboard those are `4`, `5`,
 `6`, `7`, and `8`.
+
+Pause and list menus use `W`/`S` or arrow keys to move up and down. `Enter` or
+`J` confirms the highlighted item, `4` or `K` goes back to the game, and `Q`
+returns from the pause menu to the ROM browser.
 
 ## Cardputer Zero Package Layout
 

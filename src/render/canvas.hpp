@@ -1,7 +1,7 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
+#include <vector>
 
 #include "render/layout.hpp"
 
@@ -9,11 +9,9 @@ namespace czgba::render {
 
 class Canvas {
 public:
-    static constexpr int Width = Layout::ScreenW;
-    static constexpr int Height = Layout::ScreenH;
     using Pixel = std::uint32_t;
 
-    Canvas();
+    explicit Canvas(int width = Layout::ScreenW, int height = Layout::ScreenH);
 
     void clear(Pixel color);
     void set_pixel(int x, int y, Pixel color);
@@ -25,10 +23,14 @@ public:
 
     const Pixel* data() const;
     Pixel* data();
+    int width() const;
+    int height() const;
     int pitch_bytes() const;
 
 private:
-    std::array<Pixel, Width * Height> pixels_{};
+    int width_;
+    int height_;
+    std::vector<Pixel> pixels_;
 };
 
 constexpr Canvas::Pixel rgb(std::uint8_t r, std::uint8_t g, std::uint8_t b)

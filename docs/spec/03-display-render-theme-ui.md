@@ -1,5 +1,10 @@
 # 03. Display, Render, Theme, UI
 
+> **Profile scope:** the compact `320x170` canvas and fixed coordinates in
+> this document are the Cardputer Zero contract. TDVP K230 has a distinct
+> `410x189` large-screen application layout defined by
+> `10-tdvp-k230-large-screen-ui.md`; the native GBA frame remains `240x160`.
+
 ## Internal Canvas
 
 项目内部必须维护固定大小的软件画布：
@@ -106,6 +111,18 @@ framed_pixel
 - `clean_pixel`: 240x160 原始像素 + 纯黑边框。
 - `fit_height`: 非默认，会产生非整数缩放。
 - `stretch`: 非默认，必须标记为 not recommended。
+
+## TDVP K230 Physical Presentation
+
+`tdvp-k230` maps to a dedicated K230 application layout as well as a physical
+output profile. The K230 renderer owns a `410x189` canvas, preserves the GBA
+source rectangle at `240x160`, and places it at `(85,3)` between wider UI
+rails. Native DRM/KMS presents that canvas at a 3x integer scale: `1230x567`
+at `(1,0)` on the 1232x568 landscape panel. The final game viewport is thus
+`720x480` physical pixels. The renderer does not issue DRM operations; that
+remains the platform adapter's responsibility. See
+`08-tdvp-k230.md` for the ABI/DRM boundary and
+`10-tdvp-k230-large-screen-ui.md` for K230 UI geometry.
 
 ## Rendering Order
 

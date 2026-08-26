@@ -14,7 +14,7 @@ namespace {
 bool requires_value(std::string_view arg)
 {
     return arg == "--scale" || arg == "--frames" || arg == "--rom" || arg == "--config" ||
-           arg == "--theme" || arg == "--log-level";
+           arg == "--theme" || arg == "--log-level" || arg == "--device-profile";
 }
 
 bool is_valid_log_level(std::string_view value)
@@ -62,6 +62,12 @@ bool parse_cli(int argc, char** argv, CliOptions& options, std::string& error)
                     return false;
                 }
                 options.max_frames = static_cast<int>(parsed);
+            } else if (arg == "--device-profile") {
+                if (value != "cardputer-zero" && value != "tdvp-k230") {
+                    error = "--device-profile must be cardputer-zero or tdvp-k230";
+                    return false;
+                }
+                options.device_profile = value;
             } else if (arg == "--rom") {
                 options.rom_path = value;
             } else if (arg == "--config") {
@@ -95,6 +101,7 @@ void print_help(const char* executable_name)
         << "  --frames <n>                   Run n presented frames, then exit\n"
         << "  --fullscreen                   Use a fullscreen SDL window\n"
         << "  --kiosk                        Use a borderless fixed 320x170 presentation surface\n"
+        << "  --device-profile <name>        cardputer-zero (default) or tdvp-k230\n"
         << "  --no-audio                     Run without opening an SDL audio device\n"
         << "  --rom <path>                   Start the given GBA ROM directly\n"
         << "  --config <path>                Reserved config override path\n"

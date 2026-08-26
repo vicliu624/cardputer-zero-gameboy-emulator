@@ -18,6 +18,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(CZ_GBA_FETCH_SDL2 "Fetch SDL2 if find_package cannot locate it" ON)
 set(CZ_GBA_SDL2_SOURCE_DIR "" CACHE PATH "Optional SDL2 source checkout to add_subdirectory")
 option(CZ_GBA_BUNDLE_SDL2 "Build bundled SDL2 from extern/SDL when a system SDL2 target is unavailable" ON)
+option(CZ_GBA_PREFER_BUNDLED_SDL2 "Build bundled SDL2 before searching the target SDK" OFF)
+option(CZ_GBA_SDL_SHARED "Build bundled SDL2 as a shared library" ON)
+option(CZ_GBA_SDL_STATIC "Build bundled SDL2 as a static library" OFF)
+option(CZ_GBA_REQUIRE_K230_DRM "Fail configuration unless Linux DRM/KMS UAPI headers are available" OFF)
 option(CZ_GBA_USE_SYSTEM_MGBA "Use system libmgba instead of bundled mGBA" OFF)
 option(CZ_GBA_BUNDLE_MGBA "Build bundled mGBA from extern/mgba" ON)
 set(CZ_GBA_MGBA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/mgba" CACHE PATH "mGBA source checkout")
@@ -33,16 +37,18 @@ if (CZ_GBA_BUNDLE_SDL2 AND NOT CZ_GBA_SDL2_SOURCE_DIR AND EXISTS "${CMAKE_CURREN
     set(CZ_GBA_SDL2_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/SDL" CACHE PATH "Optional SDL2 source checkout to add_subdirectory" FORCE)
 endif()
 
-find_package(SDL2 CONFIG QUIET)
+if (NOT CZ_GBA_PREFER_BUNDLED_SDL2)
+    find_package(SDL2 CONFIG QUIET)
 
-if (NOT TARGET SDL2::SDL2)
-    find_package(SDL2 QUIET)
+    if (NOT TARGET SDL2::SDL2)
+        find_package(SDL2 QUIET)
+    endif()
 endif()
 
 if (NOT TARGET SDL2::SDL2 AND CZ_GBA_SDL2_SOURCE_DIR)
     if (EXISTS "${CZ_GBA_SDL2_SOURCE_DIR}/CMakeLists.txt")
-        set(SDL_SHARED ON CACHE BOOL "" FORCE)
-        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+        set(SDL_SHARED ${CZ_GBA_SDL_SHARED} CACHE BOOL "" FORCE)
+        set(SDL_STATIC ${CZ_GBA_SDL_STATIC} CACHE BOOL "" FORCE)
         set(SDL_TEST OFF CACHE BOOL "" FORCE)
         add_subdirectory("${CZ_GBA_SDL2_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/sdl2-build" EXCLUDE_FROM_ALL)
     else()
@@ -58,8 +64,8 @@ if (NOT TARGET SDL2::SDL2 AND CZ_GBA_FETCH_SDL2)
         GIT_TAG release-2.30.11
         GIT_SHALLOW TRUE
     )
-    set(SDL_SHARED ON CACHE BOOL "" FORCE)
-    set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+    set(SDL_SHARED ${CZ_GBA_SDL_SHARED} CACHE BOOL "" FORCE)
+    set(SDL_STATIC ${CZ_GBA_SDL_STATIC} CACHE BOOL "" FORCE)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(SDL2)
 endif()
@@ -115,6 +121,7 @@ add_executable(cardputer-zero-gba
     src/config/app_config.cpp
     src/platform/sdl_platform.cpp
     src/platform/sdl_audio.cpp
+    src/platform/tdvp_k230_drm.cpp
     src/input/input_mapper.cpp
     src/core/mgba_core.cpp
     src/render/canvas.cpp
@@ -140,14 +147,54 @@ add_executable(cardputer-zero-gba-audio-core-smoke
     src/storage/rom_scanner.cpp
 )
 
+add_executable(cardputer-zero-gba-app-menu-smoke
+    tests/app_menu_smoke.cpp
+    src/app/app.cpp
+    src/app/command_bar.cpp
+    src/app/toast.cpp
+    src/cheat/cheat_manager.cpp
+    src/cheat/cheat_parser.cpp
+    src/storage/paths.cpp
+    src/storage/rom_scanner.cpp
+)
+
+add_executable(cardputer-zero-gba-presentation-profile-smoke
+    tests/presentation_profile_smoke.cpp
+)
+
+add_executable(cardputer-zero-gba-renderer-layout-smoke
+    tests/renderer_layout_smoke.cpp
+    src/render/canvas.cpp
+    src/render/font_5x7.cpp
+    src/render/renderer.cpp
+    src/render/utf8_text.cpp
+)
+
+add_executable(cardputer-zero-gba-cli-profile-smoke
+    tests/cli_profile_smoke.cpp
+    src/util/cli.cpp
+)
+
 target_compile_features(cardputer-zero-gba-packaging-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-audio-core-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-app-menu-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-presentation-profile-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-renderer-layout-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-cli-profile-smoke PRIVATE cxx_std_20)
 
 if (BUILD_TESTING)
     add_test(NAME cardputer-zero-gba-packaging-smoke
              COMMAND cardputer-zero-gba-packaging-smoke)
     add_test(NAME cardputer-zero-gba-audio-core-smoke
              COMMAND cardputer-zero-gba-audio-core-smoke)
+    add_test(NAME cardputer-zero-gba-app-menu-smoke
+             COMMAND cardputer-zero-gba-app-menu-smoke)
+    add_test(NAME cardputer-zero-gba-presentation-profile-smoke
+             COMMAND cardputer-zero-gba-presentation-profile-smoke)
+    add_test(NAME cardputer-zero-gba-renderer-layout-smoke
+             COMMAND cardputer-zero-gba-renderer-layout-smoke)
+    add_test(NAME cardputer-zero-gba-cli-profile-smoke
+             COMMAND cardputer-zero-gba-cli-profile-smoke)
 endif()
 
 target_include_directories(cardputer-zero-gba
@@ -155,7 +202,41 @@ target_include_directories(cardputer-zero-gba
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
+set(CZ_GBA_HAS_DRM_KMS OFF)
+if (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Buildroot)$")
+    find_path(CZ_GBA_DRM_UAPI_INCLUDE_DIR NAMES drm/drm.h)
+    if (CZ_GBA_DRM_UAPI_INCLUDE_DIR)
+        set(CZ_GBA_HAS_DRM_KMS ON)
+        target_include_directories(cardputer-zero-gba SYSTEM PRIVATE "${CZ_GBA_DRM_UAPI_INCLUDE_DIR}")
+        target_compile_definitions(cardputer-zero-gba PRIVATE CZ_GBA_HAS_DRM_KMS=1)
+    endif()
+endif()
+
+if (CZ_GBA_REQUIRE_K230_DRM AND NOT CZ_GBA_HAS_DRM_KMS)
+    message(FATAL_ERROR "TDVP K230 packaging requires Linux DRM/KMS UAPI headers in the selected SDK sysroot")
+endif()
+
 target_include_directories(cardputer-zero-gba-audio-core-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_include_directories(cardputer-zero-gba-app-menu-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_include_directories(cardputer-zero-gba-presentation-profile-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_include_directories(cardputer-zero-gba-renderer-layout-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_include_directories(cardputer-zero-gba-cli-profile-smoke
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
@@ -179,6 +260,23 @@ target_compile_definitions(cardputer-zero-gba
         _CRT_SECURE_NO_WARNINGS
 )
 
+target_compile_definitions(cardputer-zero-gba-app-menu-smoke
+    PRIVATE
+        NOMINMAX
+        _CRT_SECURE_NO_WARNINGS
+)
+
+target_compile_definitions(cardputer-zero-gba-renderer-layout-smoke
+    PRIVATE
+        NOMINMAX
+        _CRT_SECURE_NO_WARNINGS
+)
+
+target_compile_definitions(cardputer-zero-gba-cli-profile-smoke
+    PRIVATE
+        CARDPUTER_ZERO_GBA_VERSION="${PROJECT_VERSION}"
+)
+
 target_link_libraries(cardputer-zero-gba
     PRIVATE
         SDL2::SDL2
@@ -188,6 +286,11 @@ target_link_libraries(cardputer-zero-gba
 target_link_libraries(cardputer-zero-gba-audio-core-smoke
     PRIVATE
         mgba
+)
+
+target_link_libraries(cardputer-zero-gba-renderer-layout-smoke
+    PRIVATE
+        SDL2::SDL2
 )
 
 if (TARGET SDL2::SDL2main)
@@ -205,9 +308,17 @@ endif()
 if (MSVC)
     target_compile_options(cardputer-zero-gba PRIVATE /W4 /permissive-)
     target_compile_options(cardputer-zero-gba-audio-core-smoke PRIVATE /W4 /permissive-)
+    target_compile_options(cardputer-zero-gba-app-menu-smoke PRIVATE /W4 /permissive-)
+    target_compile_options(cardputer-zero-gba-presentation-profile-smoke PRIVATE /W4 /permissive-)
+    target_compile_options(cardputer-zero-gba-renderer-layout-smoke PRIVATE /W4 /permissive-)
+    target_compile_options(cardputer-zero-gba-cli-profile-smoke PRIVATE /W4 /permissive-)
 else()
     target_compile_options(cardputer-zero-gba PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(cardputer-zero-gba-audio-core-smoke PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(cardputer-zero-gba-app-menu-smoke PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(cardputer-zero-gba-presentation-profile-smoke PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(cardputer-zero-gba-renderer-layout-smoke PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(cardputer-zero-gba-cli-profile-smoke PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 install(TARGETS cardputer-zero-gba

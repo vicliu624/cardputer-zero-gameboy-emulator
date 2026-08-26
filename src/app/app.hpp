@@ -32,6 +32,7 @@ struct RenderState {
     const core::GbaVideoFrame* game_frame = nullptr;
     std::vector<storage::RomEntry> roms;
     int selected_rom = 0;
+    int selected_pause_item = 0;
     AppStatus status;
     std::string error_message;
     std::string bottom_bar;
@@ -58,6 +59,7 @@ private:
     void load_state();
     void load_cheats_for_current_rom();
     void toggle_selected_cheat();
+    void activate_pause_item();
     void refresh_roms();
     void set_toast(std::string toast);
     std::string command_bar() const;
@@ -72,6 +74,7 @@ private:
     std::filesystem::path current_rom_;
     AppMode mode_ = AppMode::RomBrowser;
     int selected_rom_ = 0;
+    int selected_pause_item_ = 0;
     int selected_cheat_ = 0;
     int current_slot_ = 1;
     bool fast_forward_ = false;

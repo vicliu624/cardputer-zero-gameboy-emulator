@@ -4,23 +4,26 @@
 
 namespace czgba::render {
 
-Canvas::Canvas()
+Canvas::Canvas(int width, int height)
+    : width_(std::max(1, width))
+    , height_(std::max(1, height))
+    , pixels_(static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_))
 {
     clear(rgb(0, 0, 0));
 }
 
 void Canvas::clear(Pixel color)
 {
-    pixels_.fill(color);
+    std::fill(pixels_.begin(), pixels_.end(), color);
 }
 
 void Canvas::set_pixel(int x, int y, Pixel color)
 {
-    if (x < 0 || y < 0 || x >= Width || y >= Height) {
+    if (x < 0 || y < 0 || x >= width_ || y >= height_) {
         return;
     }
 
-    pixels_[static_cast<std::size_t>(y) * Width + static_cast<std::size_t>(x)] = color;
+    pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) + static_cast<std::size_t>(x)] = color;
 }
 
 void Canvas::fill_rect(int x, int y, int width, int height, Pixel color)
@@ -31,8 +34,8 @@ void Canvas::fill_rect(int x, int y, int width, int height, Pixel color)
 
     const int x0 = std::max(0, x);
     const int y0 = std::max(0, y);
-    const int x1 = std::min(Width, x + width);
-    const int y1 = std::min(Height, y + height);
+    const int x1 = std::min(width_, x + width);
+    const int y1 = std::min(height_, y + height);
 
     for (int py = y0; py < y1; ++py) {
         for (int px = x0; px < x1; ++px) {
@@ -98,9 +101,19 @@ Canvas::Pixel* Canvas::data()
     return pixels_.data();
 }
 
+int Canvas::width() const
+{
+    return width_;
+}
+
+int Canvas::height() const
+{
+    return height_;
+}
+
 int Canvas::pitch_bytes() const
 {
-    return Width * static_cast<int>(sizeof(Pixel));
+    return width_ * static_cast<int>(sizeof(Pixel));
 }
 
 } // namespace czgba::render

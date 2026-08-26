@@ -16,22 +16,25 @@ When documents or implementation details disagree, resolve them in this order:
 
 The images in `design/` are visual inspiration only. They may guide the dark
 pixel-device look, list styling, icons, menu panels, and dialog tone, but they
-must not override the fixed 320x170 geometry or require a richer ROM-browser
-layout that the physical screen cannot support.
+must not override the documented geometry of the selected device profile. The
+K230's physical shell chrome is not part of this application UI.
 
 ## Current Product Baseline
 
 - App identity: `cardputer-zero-gba`
 - APPLaunch display name: `GBE`
 - License: MIT for this project
-- Target device: Cardputer Zero, arm64 Linux
+- Target devices: Cardputer Zero (arm64 Linux) and TDVP K230 (`tdvp-k230-r1`, RISC-V 64 LP64D)
 - Emulator core: libmgba behind the project-owned `GbaCore` / `MgbaCore`
   boundary
 - Runtime adapter: SDL2
-- Internal canvas: 320x170 XRGB8888
-- GBA viewport: 240x160 at `x=40,y=0`
-- Window policy: fixed 320x170, borderless, no title bar, no menu bar, no
-  status bar
+- Internal canvas: Cardputer Zero `320x170` XRGB8888; TDVP K230 `410x189`
+  XRGB8888
+- GBA viewport: native 240x160; Cardputer Zero at `x=40,y=0`, TDVP K230 at
+  `x=85,y=3`
+- Window policy: Cardputer Zero uses a fixed 320x170 borderless surface;
+  TDVP K230 owns a 1232x568 landscape DRM/KMS CRTC while the application is
+  running and integer-scales its `410x189` canvas to `1230x567` at `(1,0)`
 - Package delivery: Debian `.deb`, built reproducibly through Docker Compose
 - ROM policy: user-provided `.gba` files only; no bundled ROMs or BIOS
 
@@ -65,6 +68,8 @@ as the Cardputer Zero shell discovery surface.
 
 ## Runtime UI Contract
 
+The following compact geometry applies only to Cardputer Zero.
+
 The playing screen uses the Framed Pixel layout:
 
 ```text
@@ -89,6 +94,9 @@ MENU | SAVE | LOAD | FAST | CHEATS
 
 The visible labels do not show numeric prefixes because the physical device
 already aligns the five keys below the screen.
+
+For the TDVP K230's distinct large-screen geometry, expanded information
+rails, and F1--F5 command bar, see `docs/spec/10-tdvp-k230-large-screen-ui.md`.
 
 ## Input Contract
 
@@ -120,6 +128,12 @@ App controls while playing:
 The old app shortcuts `Esc`, `1`, `2`, `F`, and `C` are not part of the current
 app-control contract.
 
+The TDVP K230 function row supplements, rather than replaces, these actions:
+
+```text
+F1 / F2 / F3 / F4 / F5 -> MENU / SAVE / LOAD / FAST / CHEATS
+```
+
 ## Audio Contract
 
 The active SDL audio path uses SDL's queued-audio device. This is a deliberate
@@ -144,10 +158,13 @@ drained from mGBA but not queued to the device.
 
 ## ROM Browser Contract
 
-The ROM browser remains compact for 320x170. It should show real ROM filenames
-from `rom/`, `roms/`, and `~/.local/share/cardputer-zero-gba/roms/`, but it must
-not require last-played time, play duration, large preview art, or a wide detail
-layout. The richer design images remain style references only.
+Cardputer Zero's ROM browser remains compact for 320x170. It should show real
+ROM filenames from `rom/`, `roms/`, and
+`~/.local/share/cardputer-zero-gba/roms/`, but it must not require last-played
+time, play duration, large preview art, or a wide detail layout. TDVP K230 uses
+its own `410x189` library layout with six visible rows and expanded control
+rails; see `docs/spec/10-tdvp-k230-large-screen-ui.md`. The richer design
+images remain style references only.
 
 ## Detailed Specs
 
@@ -168,5 +185,9 @@ layout. The richer design images remain style references only.
 - [07-build-package-release.md](spec/07-build-package-release.md): CMake,
   install paths, Debian package, desktop file, Docker Compose, and release
   artifacts
+- [08-tdvp-k230.md](spec/08-tdvp-k230.md): TDVP K230 presentation, input, ABI,
+  and opkg delivery boundary
+- [10-tdvp-k230-large-screen-ui.md](spec/10-tdvp-k230-large-screen-ui.md):
+  TDVP K230 large-screen application layout
 - [09-traceability-matrix.md](spec/09-traceability-matrix.md): decision and
   implementation traceability

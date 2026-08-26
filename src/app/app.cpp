@@ -67,6 +67,7 @@ RenderState App::render_state() const
         current_frame_.pixels_xrgb8888 == nullptr ? nullptr : &current_frame_,
         roms_,
         selected_rom_,
+        selected_pause_item_,
         {87, fast_forward_ ? 119.4 : 59.7, current_slot_, fast_forward_, toast_.visible() ? toast_.text() : ""},
         error_message_,
         command_bar()
@@ -95,6 +96,7 @@ void App::handle_action(AppAction action)
 
     case AppMode::Playing:
         if (action == AppAction::OpenMenu) {
+            selected_pause_item_ = 0;
             mode_ = AppMode::Paused;
         } else if (action == AppAction::SaveState) {
             save_state();
@@ -113,7 +115,13 @@ void App::handle_action(AppAction action)
         break;
 
     case AppMode::Paused:
-        if (action == AppAction::OpenMenu || action == AppAction::Back || action == AppAction::Confirm) {
+        if (action == AppAction::Up && selected_pause_item_ > 0) {
+            --selected_pause_item_;
+        } else if (action == AppAction::Down && selected_pause_item_ < 5) {
+            ++selected_pause_item_;
+        } else if (action == AppAction::Confirm) {
+            activate_pause_item();
+        } else if (action == AppAction::OpenMenu || action == AppAction::Back) {
             mode_ = AppMode::Playing;
         } else if (action == AppAction::Quit) {
             close_current_rom();
@@ -130,6 +138,12 @@ void App::handle_action(AppAction action)
         } else if (action == AppAction::Confirm) {
             toggle_selected_cheat();
         } else if (action == AppAction::OpenMenu || action == AppAction::Back) {
+            mode_ = AppMode::Paused;
+        }
+        break;
+
+    case AppMode::Settings:
+        if (action == AppAction::OpenMenu || action == AppAction::Back || action == AppAction::Confirm) {
             mode_ = AppMode::Paused;
         }
         break;
@@ -245,6 +259,43 @@ void App::toggle_selected_cheat()
     const auto enabled = cheat_manager_.cheats()[static_cast<std::size_t>(selected_cheat_)].enabled;
     core_->set_cheat_enabled(id, enabled);
     set_toast(enabled ? "CH ON" : "CH OFF");
+}
+
+void App::activate_pause_item()
+{
+    switch (selected_pause_item_) {
+    case 0:
+        mode_ = AppMode::Playing;
+        break;
+    case 1:
+        save_state();
+        mode_ = AppMode::Playing;
+        break;
+    case 2:
+        load_state();
+        mode_ = AppMode::Playing;
+        break;
+    case 3:
+        if (cheat_manager_.cheats().empty()) {
+            set_toast("NO CH");
+            mode_ = AppMode::Playing;
+        } else {
+            selected_cheat_ = std::clamp(selected_cheat_, 0, static_cast<int>(cheat_manager_.cheats().size()) - 1);
+            mode_ = AppMode::CheatMenu;
+        }
+        break;
+    case 4:
+        mode_ = AppMode::Settings;
+        break;
+    case 5:
+        close_current_rom();
+        refresh_roms();
+        mode_ = AppMode::RomBrowser;
+        break;
+    default:
+        mode_ = AppMode::Playing;
+        break;
+    }
 }
 
 void App::refresh_roms()

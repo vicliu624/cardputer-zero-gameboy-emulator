@@ -12,20 +12,31 @@ namespace czgba::render {
 
 class Renderer {
 public:
-    Renderer();
+    explicit Renderer(RenderLayoutProfile layout_profile = RenderLayoutProfile::CardputerZero);
 
     void draw(const app::RenderState& state);
     const Canvas& canvas() const;
     Canvas& canvas();
 
 private:
+    void draw_tdvp_k230(const app::RenderState& state);
+    void draw_tdvp_k230_background();
+    void draw_tdvp_k230_game(const core::GbaVideoFrame* frame);
+    void draw_tdvp_k230_game_test_pattern();
+    void draw_tdvp_k230_side_panels(const app::AppStatus& status);
+    void draw_tdvp_k230_bottom_bar(const app::RenderState& state);
+    void draw_tdvp_k230_rom_browser(const app::RenderState& state);
+    void draw_tdvp_k230_overlay(const char* title, int selected_index);
+    void draw_tdvp_k230_error(const app::RenderState& state);
+    void draw_tdvp_k230_toast(const std::string& toast);
+    void draw_tdvp_k230_game_dimmer();
     void draw_theme_background();
     void draw_game(const core::GbaVideoFrame* frame);
     void draw_game_test_pattern();
     void draw_side_panels(const app::AppStatus& status);
     void draw_bottom_bar(const std::string& text);
     void draw_rom_browser(const app::RenderState& state);
-    void draw_overlay(const char* title);
+    void draw_overlay(const char* title, int selected_index);
     void draw_error(const app::RenderState& state);
     void draw_toast(const std::string& toast);
     void draw_panel(int x, int y, int width, int height, Canvas::Pixel fill);
@@ -44,6 +55,7 @@ private:
     void draw_rom_name(int x, int y, int max_width, const std::string& text, Canvas::Pixel color);
     std::string ellipsize_pixel_text(const std::string& text, int max_width) const;
 
+    RenderLayoutProfile layout_profile_;
     Canvas canvas_;
     Font5x7 font_;
     Utf8Text utf8_text_;

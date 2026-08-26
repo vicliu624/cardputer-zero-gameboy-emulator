@@ -17,8 +17,10 @@ GBE
 Positioning:
 
 ```text
-A Cardputer Zero focused GBA emulator frontend using libmgba as the emulator
-core, SDL2 as the runtime adapter, and a fixed 320x170 Framed Pixel UI.
+A GBA emulator frontend using libmgba as the emulator core and SDL2 where a
+runtime adapter is required. Cardputer Zero has the compact 320x170 Framed
+Pixel UI; TDVP K230 has its own 410x189 large-screen application layout and
+direct DRM/KMS presentation boundary.
 ```
 
 The project is not a new GBA emulator core. CPU, PPU, APU, cartridge behavior,
@@ -27,9 +29,10 @@ by libmgba.
 
 ## User Experience
 
-The user should open a handheld-style GBA app tailored to the 320x170 screen.
+The user should open a handheld-style GBA app tailored to the selected device
+profile.
 
-Required experience:
+Cardputer Zero required experience:
 
 - GBA video is shown at native 240x160 pixels.
 - The viewport is not scaled, cropped, stretched, or filtered by default.
@@ -39,6 +42,15 @@ Required experience:
 - Pause, settings, and cheat menus may intentionally overlay the game.
 - PC SDL simulation and Cardputer Zero runtime both use the same fixed 320x170
   borderless, undecorated window.
+
+TDVP K230 required experience:
+
+- The native GBA source remains 240x160 and is displayed as a crisp 720x480
+  physical-pixel viewport (3x integer scale).
+- A 410x189 application canvas gives the K230 wider status/control rails and
+  an F1--F5 command bar without changing emulation coordinates.
+- The DRM/KMS presentation is 1230x567 at `(1,0)` on the 1232x568 landscape
+  panel; it never uses fbdev, fractional scaling, cropping, or filtering.
 
 Layout name:
 
@@ -59,8 +71,9 @@ The project owns:
 
 - SDL2 platform adapter;
 - libmgba adapter;
-- 320x170 XRGB8888 internal canvas;
-- Framed Pixel renderer;
+- profile-specific XRGB8888 internal canvases (320x170 for Cardputer Zero,
+  410x189 for TDVP K230);
+- Framed Pixel and TDVP large-screen renderers;
 - theme/bezel rendering;
 - bottom command bar;
 - side panels;
@@ -130,7 +143,7 @@ Do not:
 - scan ROM directories every frame;
 - log every frame;
 - bind to private `cardputer-zero-shell` APIs;
-- bypass Wayland just because an internal canvas exists;
+- bypass Wayland on Cardputer Zero just because an internal canvas exists;
 - force native GBA speed to 60.000 FPS;
 - show realtime FPS as the playing-screen status number.
 
@@ -150,15 +163,18 @@ Allowed inspiration:
 
 Not allowed as hard requirements:
 
-- changing the 320x170 internal canvas;
+- changing the Cardputer Zero 320x170 layout; TDVP K230 geometry is instead
+  owned by `10-tdvp-k230-large-screen-ui.md`;
 - changing the 240x160 viewport;
 - changing the fixed left/right/bottom layout;
 - requiring preview art, favorites, last-played time, play duration, category
   metadata, or a wide detail panel in the current ROM Browser;
 - pixel-perfect reproduction of high-resolution mockups.
 
-The current ROM Browser remains compact because the physical screen width cannot
-support the richer mockup layout without hurting readability.
+The Cardputer Zero ROM Browser remains compact because its physical screen
+width cannot support the richer mockup layout without hurting readability. The
+K230 layout may use its documented wider list and control rails, but it does
+not acquire unbounded metadata or preview-art requirements.
 
 ## Open Decisions
 

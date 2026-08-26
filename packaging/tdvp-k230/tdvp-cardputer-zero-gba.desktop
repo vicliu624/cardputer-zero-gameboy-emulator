@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GBA Emulator
+Comment=Game Boy Advance emulator for TDVP K230
+Exec=/usr/bin/cardputer-zero-gba
+Icon=cardputer-zero-gba
+Terminal=false
+Categories=Game;Emulator;
+StartupNotify=false

@@ -136,6 +136,25 @@ cardputer-zero-gba_0.1.0_amd64.deb
 arm64 deb package
 ```
 
+## TDVP K230 opkg Feed Contract
+
+The TDVP K230 is a separate release target. It must not reuse the Cardputer
+Zero Debian package or APPLaunch paths. Its package recipe lives in the
+`embedded-opkg-feed` repository as `tdvp-cardputer-zero-gba` and is only built
+for platform slug `tdvp-k230-r1`.
+
+The package is compiled against the exact TDVP Buildroot SDK and publishes an
+`riscv64` `.ipk` whose ABI dependency is injected by the feed build scripts.
+The application binary is private at
+`/opt/tdvp-cardputer-zero-gba/cardputer-zero-gba`; `/usr/bin/cardputer-zero-gba`
+is a small launcher that selects the `tdvp-k230` presentation profile. The
+generic desktop entry belongs in `/usr/share/applications`.
+
+The feed recipe must build bundled static SDL2 and bundled mGBA for this
+target. It must not package a host executable, system drivers, framebuffer
+configuration, or `/lib` content. The exact SDK, target-device smoke test, and
+normal feed signing are required before a generated `.ipk` is released.
+
 ## Install Paths
 
 安装后文件必须放置：

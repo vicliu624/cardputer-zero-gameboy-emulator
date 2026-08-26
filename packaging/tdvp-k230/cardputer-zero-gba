@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+runtime_dir=/opt/tdvp-cardputer-zero-gba
+runtime="$runtime_dir/cardputer-zero-gba"
+
+if [ ! -x "$runtime" ]; then
+    echo "cardputer-zero-gba: missing TDVP K230 runtime: $runtime" >&2
+    exit 127
+fi
+
+# The tdvp-k230 profile acquires its application-local DRM/KMS scanout itself.
+# SDL is retained for audio only on this path. Do not force Wayland, fbdev, or
+# another SDL video driver here; that would bypass the native KMS adapter.
+exec "$runtime" --device-profile tdvp-k230 "$@"

@@ -15,6 +15,22 @@ SdlPlatform::~SdlPlatform()
 
 bool SdlPlatform::init(const PlatformConfig& config)
 {
+    presentation_profile_ = config.presentation_profile;
+    canvas_width_ = config.canvas_width;
+    canvas_height_ = config.canvas_height;
+    if (canvas_width_ <= 0 || canvas_height_ <= 0) {
+        std::cerr << "Invalid application canvas dimensions\n";
+        return false;
+    }
+    if (presentation_profile_ == PresentationProfile::TdvpK230) {
+        auto drm = std::make_unique<TdvpK230Drm>();
+        if (drm->init()) {
+            tdvp_k230_drm_ = std::move(drm);
+            return true;
+        }
+        std::cerr << "TDVP K230 DRM presentation unavailable; falling back to SDL for development only\n";
+    }
+
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "1");
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
@@ -27,9 +43,12 @@ bool SdlPlatform::init(const PlatformConfig& config)
         return false;
     }
 
+    const auto profile = presentation_profile_spec(config.presentation_profile);
+    const bool use_fullscreen = config.fullscreen || profile.fullscreen;
+
     std::uint32_t window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS;
 
-    if (config.fullscreen) {
+    if (use_fullscreen) {
         window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
 
@@ -37,8 +56,8 @@ bool SdlPlatform::init(const PlatformConfig& config)
         "cardputer-zero-gba",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        render::Layout::ScreenW,
-        render::Layout::ScreenH,
+        profile.initial_window_width,
+        profile.initial_window_height,
         window_flags);
 
     if (window_ == nullptr) {
@@ -48,8 +67,10 @@ bool SdlPlatform::init(const PlatformConfig& config)
     }
 
     SDL_SetWindowBordered(window_, SDL_FALSE);
-    SDL_SetWindowSize(window_, render::Layout::ScreenW, render::Layout::ScreenH);
-    if (config.fullscreen) {
+    if (!use_fullscreen) {
+        SDL_SetWindowSize(window_, profile.initial_window_width, profile.initial_window_height);
+    }
+    if (use_fullscreen) {
         SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
     }
 
@@ -64,14 +85,16 @@ bool SdlPlatform::init(const PlatformConfig& config)
         return false;
     }
 
-    SDL_RenderSetLogicalSize(renderer_, render::Layout::ScreenW, render::Layout::ScreenH);
+    if (!profile.integer_scale) {
+        SDL_RenderSetLogicalSize(renderer_, canvas_width_, canvas_height_);
+    }
 
     texture_ = SDL_CreateTexture(
         renderer_,
         SDL_PIXELFORMAT_XRGB8888,
         SDL_TEXTUREACCESS_STREAMING,
-        render::Layout::ScreenW,
-        render::Layout::ScreenH);
+        canvas_width_,
+        canvas_height_);
 
     if (texture_ == nullptr) {
         std::cerr << "SDL_CreateTexture failed: " << SDL_GetError() << '\n';
@@ -84,6 +107,10 @@ bool SdlPlatform::init(const PlatformConfig& config)
 
 void SdlPlatform::shutdown()
 {
+    if (tdvp_k230_drm_) {
+        tdvp_k230_drm_->shutdown();
+        tdvp_k230_drm_.reset();
+    }
     if (texture_ != nullptr) {
         SDL_DestroyTexture(texture_);
         texture_ = nullptr;
@@ -101,6 +128,12 @@ void SdlPlatform::shutdown()
 
 void SdlPlatform::poll_events(input::InputFrame& input)
 {
+    if (tdvp_k230_drm_) {
+        tdvp_k230_drm_->poll_events(input);
+        should_quit_ = tdvp_k230_drm_->should_quit();
+        return;
+    }
+
     input.begin_frame();
     input.gba = input_mapper_.gba_state();
 
@@ -117,11 +150,37 @@ void SdlPlatform::poll_events(input::InputFrame& input)
     }
 }
 
-void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int pitch_bytes)
+void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width, int canvas_height, int pitch_bytes)
 {
+    if (canvas_width != canvas_width_ || canvas_height != canvas_height_) {
+        std::cerr << "Application canvas dimensions changed after platform initialization\n";
+        return;
+    }
+    if (tdvp_k230_drm_) {
+        tdvp_k230_drm_->present(canvas_xrgb8888, canvas_width, canvas_height, pitch_bytes);
+        return;
+    }
     SDL_UpdateTexture(texture_, nullptr, canvas_xrgb8888, pitch_bytes);
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
     SDL_RenderClear(renderer_);
-    SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
+
+    if (presentation_profile_ == PresentationProfile::TdvpK230) {
+        int output_width = 0;
+        int output_height = 0;
+        if (SDL_GetRendererOutputSize(renderer_, &output_width, &output_height) == 0) {
+            const auto destination = integer_presentation_rect(
+                canvas_width_,
+                canvas_height_,
+                output_width,
+                output_height);
+            if (destination.width > 0 && destination.height > 0) {
+                const SDL_Rect rect{destination.x, destination.y, destination.width, destination.height};
+                SDL_RenderCopy(renderer_, texture_, nullptr, &rect);
+            }
+        }
+    } else {
+        SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
+    }
     SDL_RenderPresent(renderer_);
 }
 

@@ -11,6 +11,7 @@
 #include "input/input_frame.hpp"
 #include "platform/sdl_audio.hpp"
 #include "platform/sdl_platform.hpp"
+#include "platform/presentation_profile.hpp"
 #include "render/renderer.hpp"
 #include "storage/paths.hpp"
 #include "util/cli.hpp"
@@ -46,6 +47,22 @@ czgba::core::MgbaLogLevel mgba_log_level_from_cli(const std::string& value)
     return czgba::core::MgbaLogLevel::Error;
 }
 
+czgba::platform::PresentationProfile presentation_profile_from_cli(const std::string& value)
+{
+    if (value == "tdvp-k230") {
+        return czgba::platform::PresentationProfile::TdvpK230;
+    }
+    return czgba::platform::PresentationProfile::CardputerZero;
+}
+
+czgba::render::RenderLayoutProfile render_layout_profile_from_presentation(
+    czgba::platform::PresentationProfile presentation_profile)
+{
+    return presentation_profile == czgba::platform::PresentationProfile::TdvpK230
+        ? czgba::render::RenderLayoutProfile::TdvpK230
+        : czgba::render::RenderLayoutProfile::CardputerZero;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -68,9 +85,13 @@ int main(int argc, char** argv)
         return 0;
     }
 
+    const auto presentation_profile = presentation_profile_from_cli(options.device_profile);
+    const auto render_layout_profile = render_layout_profile_from_presentation(presentation_profile);
+    const auto canvas_spec = czgba::render::canvas_spec(render_layout_profile);
+
     czgba::platform::SdlPlatform platform;
     (void)options.scale;
-    if (!platform.init({options.kiosk, options.fullscreen})) {
+    if (!platform.init({options.kiosk, options.fullscreen, presentation_profile, canvas_spec.width, canvas_spec.height})) {
         return 1;
     }
 
@@ -94,7 +115,7 @@ int main(int argc, char** argv)
         app.start_with_rom(czgba::storage::path_from_utf8(options.rom_path));
     }
 
-    czgba::render::Renderer renderer;
+    czgba::render::Renderer renderer(render_layout_profile);
     czgba::input::InputFrame input;
 
     using clock = std::chrono::steady_clock;
@@ -121,7 +142,11 @@ int main(int argc, char** argv)
         }
 
         renderer.draw(app.render_state());
-        platform.present(renderer.canvas().data(), renderer.canvas().pitch_bytes());
+        platform.present(
+            renderer.canvas().data(),
+            renderer.canvas().width(),
+            renderer.canvas().height(),
+            renderer.canvas().pitch_bytes());
         ++presented_frames;
 
         if (options.max_frames > 0 && presented_frames >= options.max_frames) {

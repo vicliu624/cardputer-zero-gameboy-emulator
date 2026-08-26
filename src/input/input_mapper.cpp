@@ -61,6 +61,21 @@ void InputMapper::handle_key(SDL_Keycode key, bool pressed, InputFrame& frame)
     case SDLK_8:
         if (pressed) frame.actions.push_back(app::AppAction::OpenCheatMenu);
         break;
+    case SDLK_F1:
+        if (pressed) frame.actions.push_back(app::AppAction::OpenMenu);
+        break;
+    case SDLK_F2:
+        if (pressed) frame.actions.push_back(app::AppAction::SaveState);
+        break;
+    case SDLK_F3:
+        if (pressed) frame.actions.push_back(app::AppAction::LoadState);
+        break;
+    case SDLK_F4:
+        if (pressed) frame.actions.push_back(app::AppAction::ToggleFastForward);
+        break;
+    case SDLK_F5:
+        if (pressed) frame.actions.push_back(app::AppAction::OpenCheatMenu);
+        break;
     case SDLK_q:
         if (pressed) frame.actions.push_back(app::AppAction::Quit);
         break;

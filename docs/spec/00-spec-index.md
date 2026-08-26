@@ -44,14 +44,22 @@ Build, install, Debian package, desktop file, Docker Compose, and release:
 
 - `07-build-package-release.md`
 
+TDVP K230 device profile, ABI-gated opkg delivery, and input/presentation:
+
+- `08-tdvp-k230.md`
+
+TDVP K230 large-screen application layout:
+
+- `10-tdvp-k230-large-screen-ui.md`
+
 Traceability:
 
 - `09-traceability-matrix.md`
 
 ## Arbitration Rules
 
-1. If a visual reference conflicts with fixed coordinates, fixed coordinates
-   win.
+1. If a visual reference conflicts with a profile's documented coordinates,
+   the documented coordinates win.
 2. If implementation convenience conflicts with module boundaries, module
    boundaries win.
 3. If an SDL convenience API conflicts with the internal canvas model, the
@@ -60,12 +68,16 @@ Traceability:
    cadence wins.
 5. If a Debian packaging shortcut writes into user home, user-data boundaries
    win.
-6. If a visual mockup requires a wider or richer ROM Browser than 320x170 can
-   support, the compact ROM Browser wins.
+6. If a visual mockup requires a richer ROM Browser than a profile supports,
+   that profile's UI contract wins. Cardputer Zero is compact; TDVP K230 uses
+   the dedicated layout in `10-tdvp-k230-large-screen-ui.md`.
 7. If shortcut docs conflict with the current input contract, use
    `04-input-storage-config.md` and `InputMapper`'s `4/5/6/7/8` mapping.
 8. If audio notes conflict with the current SDL queued-audio playback contract,
    use `05-core-audio-timing.md`.
+9. If a K230 packaging or DRM/KMS presentation convenience conflicts with the
+   TDVP ABI boundary, use `08-tdvp-k230.md`; use
+   `10-tdvp-k230-large-screen-ui.md` for the K230 application layout.
 
 ## Spec Change Rules
 

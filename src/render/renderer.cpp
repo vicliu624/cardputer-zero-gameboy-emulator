@@ -65,10 +65,19 @@ std::string ascii_fallback_name(const std::string& text)
 
 } // namespace
 
-Renderer::Renderer() = default;
+Renderer::Renderer(RenderLayoutProfile layout_profile)
+    : layout_profile_(layout_profile)
+    , canvas_(canvas_spec(layout_profile).width, canvas_spec(layout_profile).height)
+{
+}
 
 void Renderer::draw(const app::RenderState& state)
 {
+    if (layout_profile_ == RenderLayoutProfile::TdvpK230) {
+        draw_tdvp_k230(state);
+        return;
+    }
+
     canvas_.clear(kBlack);
     draw_theme_background();
 
@@ -90,11 +99,11 @@ void Renderer::draw(const app::RenderState& state)
     draw_toast(state.status.toast);
 
     if (state.mode == app::AppMode::Paused) {
-        draw_overlay("PAUSED");
+        draw_overlay("PAUSED", state.selected_pause_item);
     } else if (state.mode == app::AppMode::CheatMenu) {
-        draw_overlay("CHEATS");
+        draw_overlay("CHEATS", 0);
     } else if (state.mode == app::AppMode::Settings) {
-        draw_overlay("SETTINGS");
+        draw_overlay("SETTINGS", 0);
     }
 }
 
@@ -106,6 +115,277 @@ const Canvas& Renderer::canvas() const
 Canvas& Renderer::canvas()
 {
     return canvas_;
+}
+
+void Renderer::draw_tdvp_k230(const app::RenderState& state)
+{
+    canvas_.clear(kBlack);
+    draw_tdvp_k230_background();
+
+    if (state.mode == app::AppMode::RomBrowser) {
+        draw_tdvp_k230_rom_browser(state);
+        draw_tdvp_k230_bottom_bar(state);
+        return;
+    }
+
+    if (state.mode == app::AppMode::Error) {
+        draw_tdvp_k230_error(state);
+        draw_tdvp_k230_bottom_bar(state);
+        return;
+    }
+
+    draw_tdvp_k230_game(state.game_frame);
+    draw_tdvp_k230_side_panels(state.status);
+    draw_tdvp_k230_bottom_bar(state);
+    draw_tdvp_k230_toast(state.status.toast);
+
+    if (state.mode == app::AppMode::Paused) {
+        draw_tdvp_k230_overlay("PAUSED", state.selected_pause_item);
+    } else if (state.mode == app::AppMode::CheatMenu) {
+        draw_tdvp_k230_overlay("CHEATS", 0);
+    } else if (state.mode == app::AppMode::Settings) {
+        draw_tdvp_k230_overlay("SETTINGS", 0);
+    }
+}
+
+void Renderer::draw_tdvp_k230_background()
+{
+    using T = TdvpK230Layout;
+    canvas_.fill_rect(0, 0, T::ScreenW, T::ScreenH, rgb(7, 10, 13));
+    canvas_.draw_rect(0, 0, T::ScreenW, T::ScreenH, kPanelEdge);
+    canvas_.draw_rect(2, 2, T::ScreenW - 4, T::ScreenH - 4, rgb(21, 26, 33));
+
+    for (int y = 6; y < T::ScreenH - 6; y += 7) {
+        for (int x = 6; x < T::ScreenW - 6; x += 8) {
+            if (((x / 2 + y) % 7) == 0) {
+                canvas_.set_pixel(x, y, rgb(15, 20, 25));
+            }
+        }
+    }
+}
+
+void Renderer::draw_tdvp_k230_game(const core::GbaVideoFrame* frame)
+{
+    using T = TdvpK230Layout;
+    if (frame != nullptr && frame->pixels_xrgb8888 != nullptr) {
+        canvas_.draw_pixels(
+            T::GameX,
+            T::GameY,
+            std::min(T::GameW, frame->width),
+            std::min(T::GameH, frame->height),
+            frame->pixels_xrgb8888,
+            frame->pitch_pixels);
+        canvas_.draw_rect(T::GameX, T::GameY, T::GameW, T::GameH, rgb(22, 25, 28));
+        return;
+    }
+
+    draw_tdvp_k230_game_test_pattern();
+}
+
+void Renderer::draw_tdvp_k230_game_test_pattern()
+{
+    using T = TdvpK230Layout;
+    for (int y = 0; y < T::GameH; ++y) {
+        for (int x = 0; x < T::GameW; ++x) {
+            const int tile = ((x / 8) + (y / 8)) & 1;
+            const int hill = (x + y / 2) % 64;
+            Canvas::Pixel color = tile == 0 ? rgb(67, 130, 84) : rgb(78, 147, 91);
+            if (hill < 16) {
+                color = tile == 0 ? rgb(111, 168, 86) : rgb(127, 181, 94);
+            }
+            if (y > 106 && y < 132 && x > 20 && x < 220) {
+                color = ((x + y) & 4) == 0 ? rgb(176, 146, 79) : rgb(197, 166, 95);
+            }
+            if ((x % 32 == 0) || (y % 32 == 0)) {
+                color = kGrid;
+            }
+            canvas_.set_pixel(T::GameX + x, T::GameY + y, color);
+        }
+    }
+
+    draw_centered_text(T::GameX, T::GameY + 146, T::GameW, "240X160 TEST", rgb(24, 30, 34));
+    canvas_.draw_rect(T::GameX, T::GameY, T::GameW, T::GameH, rgb(22, 25, 28));
+}
+
+void Renderer::draw_tdvp_k230_side_panels(const app::AppStatus& status)
+{
+    using T = TdvpK230Layout;
+    draw_panel(T::LeftX, T::LeftY, T::SideW, T::SideH, kPanel);
+    draw_panel(T::RightX, T::RightY, T::SideW, T::SideH, kPanel);
+
+    constexpr int left_x = T::LeftX + 5;
+    constexpr int left_w = T::SideW - 10;
+    draw_pixel_gameboy_icon(T::LeftX + 30, T::LeftY + 10);
+    draw_centered_text(left_x, T::LeftY + 39, left_w, "K230", kLavender);
+    draw_deco_line(T::LeftX + 12, T::LeftY + 51, T::SideW - 24);
+    draw_centered_text(left_x, T::LeftY + 61, left_w, "BATTERY", kLavender);
+    draw_centered_text(left_x, T::LeftY + 72, left_w, std::to_string(status.battery_percent) + "%", kGreen);
+    draw_centered_text(left_x, T::LeftY + 94, left_w, "SLOT " + std::to_string(status.current_slot), kWhite);
+    draw_centered_text(left_x, T::LeftY + 113, left_w, "SPEED", kLavender);
+    draw_centered_text(left_x, T::LeftY + 124, left_w, status.fast_forward ? "2X FAST" : "1X NORM", kBlue);
+    draw_centered_text(left_x, T::LeftY + 143, left_w, "GBA READY", kMuted);
+
+    constexpr int right_x = T::RightX + 5;
+    constexpr int right_w = T::SideW - 10;
+    draw_dpad_icon(T::RightX + 39, T::RightY + 21);
+    draw_centered_text(right_x, T::RightY + 39, right_w, "CONTROLS", kLavender);
+    draw_deco_line(T::RightX + 12, T::RightY + 51, T::SideW - 24);
+    draw_centered_text(right_x, T::RightY + 61, right_w, "J  A", kWhite);
+    draw_centered_text(right_x, T::RightY + 75, right_w, "K  B", kWhite);
+    draw_centered_text(right_x, T::RightY + 89, right_w, "U  L", kWhite);
+    draw_centered_text(right_x, T::RightY + 103, right_w, "I  R", kWhite);
+    draw_centered_text(right_x, T::RightY + 122, right_w, "WASD MOVE", kBlue);
+    draw_centered_text(right_x, T::RightY + 136, right_w, "ENTER START", kMuted);
+    draw_centered_text(right_x, T::RightY + 148, right_w, "SPACE SEL", kMuted);
+}
+
+void Renderer::draw_tdvp_k230_bottom_bar(const app::RenderState& state)
+{
+    using T = TdvpK230Layout;
+    draw_panel(T::BarX, T::BarY, T::BarW, T::BarH, kPanel);
+    if (state.mode != app::AppMode::Playing) {
+        std::string text = state.bottom_bar;
+        const auto legacy_key = text.find("4:");
+        if (legacy_key != std::string::npos) {
+            text.replace(legacy_key, 2, "F1:");
+        }
+        draw_centered_text(T::BarX + 4, T::BarY + 7, T::BarW - 8, text, kWhite);
+        return;
+    }
+
+    constexpr std::array<std::string_view, 5> kActions{{
+        "F1 MENU", "F2 SAVE", "F3 LOAD", "F4 FAST", "F5 CHEAT",
+    }};
+    constexpr int slot_width = T::BarW / static_cast<int>(kActions.size());
+    for (int index = 0; index < static_cast<int>(kActions.size()); ++index) {
+        const int x = T::BarX + index * slot_width;
+        if (index != 0) {
+            canvas_.draw_vline(x, T::BarY + 3, T::BarH - 6, kPanelShade);
+            canvas_.set_pixel(x, T::BarY + 2, kPanelBright);
+        }
+        const std::string text{kActions[static_cast<std::size_t>(index)]};
+        draw_centered_text(x, T::BarY + 7, slot_width, text, index == 3 ? kGold : kWhite);
+    }
+}
+
+void Renderer::draw_tdvp_k230_rom_browser(const app::RenderState& state)
+{
+    using T = TdvpK230Layout;
+    draw_tdvp_k230_side_panels(state.status);
+
+    const int list_x = T::GameX + 1;
+    const int list_y = T::GameY + 1;
+    const int list_w = T::GameW - 2;
+    const int list_h = T::GameH - 2;
+    draw_panel(list_x, list_y, list_w, list_h, kPanelDark);
+    draw_centered_text(list_x, list_y + 10, list_w, "GBA LIBRARY", kLavender);
+    draw_deco_line(list_x + 24, list_y + 22, list_w - 48);
+
+    if (state.roms.empty()) {
+        draw_centered_text(list_x, list_y + 59, list_w, "NO ROMS FOUND", kWhite);
+        draw_centered_text(list_x, list_y + 76, list_w, "PUT .GBA FILES IN ROM", kLavender);
+        draw_cartridge_icon(list_x + list_w / 2 - 5, list_y + 99, false);
+        return;
+    }
+
+    const int first = std::clamp(state.selected_rom - 2, 0, std::max(0, static_cast<int>(state.roms.size()) - 6));
+    const int last = std::min(static_cast<int>(state.roms.size()), first + 6);
+    int y = list_y + 34;
+    for (int index = first; index < last; ++index) {
+        const bool selected = index == state.selected_rom;
+        if (selected) {
+            canvas_.fill_rect(list_x + 9, y - 4, list_w - 18, 17, kLavenderDeep);
+            canvas_.draw_rect(list_x + 9, y - 4, list_w - 18, 17, kLavender);
+            font_.draw_text(canvas_, list_x + 14, y, ">", kWhite);
+        } else {
+            draw_deco_line(list_x + 22, y + 13, list_w - 44);
+        }
+        draw_cartridge_icon(list_x + 32, y - 2, selected);
+        draw_rom_name(
+            list_x + 49,
+            y - 2,
+            list_w - 62,
+            state.roms[static_cast<std::size_t>(index)].display_name,
+            selected ? kWhite : kMuted);
+        y += 20;
+    }
+
+    if (last < static_cast<int>(state.roms.size())) {
+        canvas_.fill_rect(list_x + list_w / 2 - 2, list_y + list_h - 12, 5, 2, kLavender);
+        canvas_.fill_rect(list_x + list_w / 2 - 1, list_y + list_h - 10, 3, 2, kLavender);
+        canvas_.set_pixel(list_x + list_w / 2, list_y + list_h - 8, kLavender);
+    }
+}
+
+void Renderer::draw_tdvp_k230_overlay(const char* title, int selected_index)
+{
+    using T = TdvpK230Layout;
+    draw_tdvp_k230_game_dimmer();
+
+    constexpr int width = 152;
+    constexpr int height = 128;
+    const int x = T::GameX + (T::GameW - width) / 2;
+    const int y = T::GameY + (T::GameH - height) / 2;
+    draw_panel(x, y, width, height, kPanel);
+    draw_deco_line(x + 28, y + 18, width - 56);
+    draw_centered_text(x, y + 9, width, title, kLavender);
+
+    constexpr const char* kItems[] = {
+        "Resume", "Save State", "Load State", "Cheats", "Settings", "Quit Game",
+    };
+    const int selected = std::clamp(selected_index, 0, 5);
+    int item_y = y + 31;
+    for (int index = 0; index < 6; ++index) {
+        const bool selected_item = index == selected;
+        if (selected_item) {
+            canvas_.fill_rect(x + 8, item_y - 3, width - 16, 13, kLavenderDeep);
+            canvas_.draw_rect(x + 8, item_y - 3, width - 16, 13, kLavender);
+            font_.draw_text(canvas_, x + 13, item_y, ">", kWhite);
+        }
+        font_.draw_text(canvas_, x + 29, item_y, kItems[index], selected_item ? kWhite : kMuted);
+        item_y += 15;
+    }
+}
+
+void Renderer::draw_tdvp_k230_error(const app::RenderState& state)
+{
+    using T = TdvpK230Layout;
+    draw_tdvp_k230_side_panels(state.status);
+    const int x = T::GameX + 10;
+    const int y = T::GameY + 51;
+    const int width = T::GameW - 20;
+    draw_panel(x, y, width, 58, kPanel);
+    draw_centered_text(x, y + 11, width, "ERROR", kLavender);
+    draw_centered_text(x, y + 30, width, state.error_message, kWhite);
+}
+
+void Renderer::draw_tdvp_k230_toast(const std::string& toast)
+{
+    if (toast.empty()) {
+        return;
+    }
+
+    using T = TdvpK230Layout;
+    const std::string compact = toast.size() > 10 ? toast.substr(0, 10) : toast;
+    canvas_.fill_rect(T::LeftX + 8, T::LeftY + 135, T::SideW - 16, 14, rgb(24, 48, 22));
+    canvas_.draw_rect(T::LeftX + 8, T::LeftY + 135, T::SideW - 16, 14, kGreen);
+    draw_centered_text(T::LeftX + 10, T::LeftY + 138, T::SideW - 20, compact, kGreen);
+}
+
+void Renderer::draw_tdvp_k230_game_dimmer()
+{
+    using T = TdvpK230Layout;
+    for (int y = 0; y < T::GameH; ++y) {
+        for (int x = 0; x < T::GameW; ++x) {
+            const int sx = T::GameX + x;
+            const int sy = T::GameY + y;
+            const auto original = canvas_.data()[static_cast<std::size_t>(sy) * canvas_.width() + sx];
+            const auto r = static_cast<unsigned char>(((original >> 16) & 0xff) / 3);
+            const auto g = static_cast<unsigned char>(((original >> 8) & 0xff) / 3);
+            const auto b = static_cast<unsigned char>((original & 0xff) / 3);
+            canvas_.set_pixel(sx, sy, rgb(r, g, b));
+        }
+    }
 }
 
 void Renderer::draw_theme_background()
@@ -272,7 +552,7 @@ void Renderer::draw_rom_browser(const app::RenderState& state)
     draw_centered_text(info_x, info_y + 125, info_w, "OK", kGreen);
 }
 
-void Renderer::draw_overlay(const char* title)
+void Renderer::draw_overlay(const char* title, int selected_index)
 {
     draw_game_dimmer();
 
@@ -292,14 +572,16 @@ void Renderer::draw_overlay(const char* title)
         "Settings",
         "Quit Game",
     };
+    const int selected = std::clamp(selected_index, 0, 5);
     int item_y = y + 27;
     for (int i = 0; i < 6; ++i) {
-        if (i == 0) {
+        const bool selected_item = i == selected;
+        if (selected_item) {
             canvas_.fill_rect(x + 5, item_y - 3, w - 10, 12, kLavenderDeep);
             canvas_.draw_rect(x + 5, item_y - 3, w - 10, 12, kLavender);
             font_.draw_text(canvas_, x + 9, item_y, ">", kWhite);
         }
-        font_.draw_text(canvas_, x + 22, item_y, kItems[i], i == 0 ? kWhite : kMuted);
+        font_.draw_text(canvas_, x + 22, item_y, kItems[i], selected_item ? kWhite : kMuted);
         item_y += 13;
     }
 }
@@ -485,7 +767,7 @@ void Renderer::draw_game_dimmer()
         for (int x = 0; x < Layout::GameW; ++x) {
             const int sx = Layout::GameX + x;
             const int sy = Layout::GameY + y;
-            const auto original = canvas_.data()[static_cast<std::size_t>(sy) * Canvas::Width + sx];
+            const auto original = canvas_.data()[static_cast<std::size_t>(sy) * canvas_.width() + sx];
             const auto r = static_cast<unsigned char>(((original >> 16) & 0xff) / 3);
             const auto g = static_cast<unsigned char>(((original >> 8) & 0xff) / 3);
             const auto b = static_cast<unsigned char>((original & 0xff) / 3);
