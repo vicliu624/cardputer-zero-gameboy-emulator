@@ -5,6 +5,26 @@ Zero portable Linux device. It uses libmgba for emulation, SDL2 for the Linux
 runtime adapter, and a fixed 320x170 XRGB8888 internal canvas for the framed
 pixel UI.
 
+## Clone with bundled dependencies
+
+SDL2 and mGBA are pinned Git submodules under `extern/`. Clone recursively so
+the reviewed dependency revisions required by both the Cardputer Zero and TDVP
+K230 builds are present:
+
+```sh
+git clone --recurse-submodules https://github.com/vicliu624/cardputer-zero-gameboy-emulator.git
+```
+
+For an existing checkout:
+
+```sh
+git submodule update --init --recursive
+```
+
+For a TDVP K230 release build from WSL, use a clean recursive clone in the WSL
+Linux filesystem rather than a Windows-mounted working tree. The feed recipe
+checks the exact source commit and refuses a dirty checkout before packaging.
+
 The authoritative project specification is [docs/SPEC.md](docs/SPEC.md), with
 detailed specs under [docs/spec/](docs/spec/).
 
