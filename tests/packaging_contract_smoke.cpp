@@ -64,6 +64,8 @@ int main()
     require(contains(tdvp_launcher, "cd -- \"$HOME\""), "TDVP launcher starts relative ROM discovery from the user home");
     const auto tdvp_desktop = read_file(root / "packaging" / "tdvp-k230" / "tdvp-cardputer-zero-gba.desktop");
     require(contains(tdvp_desktop, "Exec=/usr/bin/cardputer-zero-gba"), "TDVP desktop launch path");
+    require(contains(tdvp_desktop, "Icon=/usr/share/icons/hicolor/128x128/apps/cardputer-zero-gba.png"),
+            "TDVP desktop uses its package-owned absolute icon path");
     require(contains(tdvp_desktop, "Categories=Game;Emulator;"), "TDVP desktop category");
 
     const auto sdl_audio = read_file(root / "src" / "platform" / "sdl_audio.cpp");
