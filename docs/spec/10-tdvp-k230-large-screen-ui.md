@@ -13,8 +13,8 @@ video format.
 | --- | --- |
 | Emulator core | mGBA continues to produce an unmodified 240x160 GBA frame. Game coordinates and input semantics do not change. |
 | Application layout | Cardputer Zero keeps its 320x170 layout. TDVP K230 gets its own 410x189 layout, with larger information and command regions. |
-| Physical presentation | K230 DRM/KMS finds the `/dev/dri/cardN` node with a connected 1232x568 mode and presents the TDVP canvas by 3x nearest-neighbour integer scaling to 1230x567, centered at `(1, 0)`. |
-| Device system UI | The screenshot's firmware status bar and left-side launcher chrome belong to the device shell, not this application, and are not reproduced by the emulator. |
+| Physical presentation | The user-visible UI coordinate system is 1232x568 landscape. The verified RM69A10 connector exposes a 568x1232 native DRM scanout, so the backend applies the firmware-matching counter-clockwise coordinate transform after 3x nearest-neighbour scaling of the TDVP canvas to 1230x567 at landscape `(1, 0)`. |
+| Device system UI | Firmware shell chrome is owned by the device shell, not this application, and is not reproduced by the emulator. |
 | Release boundary | The package remains `tdvp-cardputer-zero-gba` for `tdvp-k230-br2025.02.1-glibc2.33-rv64-lp64d-k6.6.36-r1`. |
 
 ## TDVP K230 logical layout
@@ -40,4 +40,5 @@ aliases; the displayed primary labels are F1--F5.
 - No fractional scaling or smoothing.
 - No fbdev fallback as the device implementation path.
 - No scaling, cropping, or re-timing of the native GBA frame.
-- No deployment to a target device as part of development verification.
+- No modification of device system settings or display configuration outside the
+  application's temporary, restored DRM CRTC ownership while it runs.

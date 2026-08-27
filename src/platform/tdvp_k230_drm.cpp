@@ -50,8 +50,6 @@ struct TdvpK230DrmState {
 #if defined(__linux__) && defined(CZ_GBA_HAS_DRM_KMS)
 namespace {
 
-constexpr int kK230OutputWidth = 1232;
-constexpr int kK230OutputHeight = 568;
 // Connector status is exposed as a raw u32 by the kernel UAPI. libdrm gives
 // this value a DRM_MODE_CONNECTED alias, but this Buildroot SDK intentionally
 // ships only the kernel DRM headers. Linux defines connected as value 1.
@@ -102,7 +100,7 @@ SDL_Keycode to_sdl_key(std::uint16_t code)
 
 bool is_target_mode(const drm_mode_modeinfo& mode)
 {
-    return mode.hdisplay == kK230OutputWidth && mode.vdisplay == kK230OutputHeight;
+    return k230_scanout_transform(mode.hdisplay, mode.vdisplay) != K230ScanoutTransform::Unsupported;
 }
 
 struct ConnectorInfo {
@@ -232,7 +230,7 @@ bool choose_output(TdvpK230DrmState& state, bool report_missing_output)
     }
 
     if (report_missing_output) {
-        std::cerr << "TDVP K230 DRM: no connected 1232x568 KMS output was found\n";
+        std::cerr << "TDVP K230 DRM: no connected 568x1232 native or 1232x568 landscape KMS output was found\n";
     }
     return false;
 }
@@ -381,7 +379,7 @@ bool TdvpK230Drm::init()
         candidate->drm_fd = -1;
     }
     if (candidate->drm_fd < 0) {
-        std::cerr << "TDVP K230 DRM: no /dev/dri/cardN node exposes a connected 1232x568 KMS output\n";
+        std::cerr << "TDVP K230 DRM: no /dev/dri/cardN node exposes a supported connected KMS output\n";
         return false;
     }
 
@@ -408,7 +406,12 @@ bool TdvpK230Drm::init()
     }
 
     open_input_devices(state);
-    std::cout << "TDVP K230 DRM: 1232x568 KMS output active on " << selected_card << '\n';
+    const auto transform = k230_scanout_transform(state.mode.hdisplay, state.mode.vdisplay);
+    std::cout << "TDVP K230 DRM: " << state.mode.hdisplay << 'x' << state.mode.vdisplay
+              << (transform == K230ScanoutTransform::RotateCounterClockwise
+                      ? " native portrait scanout active (landscape content rotated CCW) on "
+                      : " landscape scanout active on ")
+              << selected_card << '\n';
     return true;
 #else
     std::cerr << "TDVP K230 DRM: this build has no Linux DRM/KMS UAPI support\n";
@@ -525,11 +528,19 @@ void TdvpK230Drm::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
 
     TdvpK230DrmState& state = *state_;
     std::memset(state.framebuffer, 0, static_cast<std::size_t>(state.dumb_size));
+    const auto transform = k230_scanout_transform(state.mode.hdisplay, state.mode.vdisplay);
+    if (transform == K230ScanoutTransform::Unsupported) {
+        return;
+    }
+
+    // The application always lays out the K230 UI in its physical landscape
+    // coordinates. On the actual 568x1232 KMS scanout, each scaled pixel is
+    // then rotated into the panel-native buffer below.
     const auto destination = integer_presentation_rect(
         canvas_width,
         canvas_height,
-        state.mode.hdisplay,
-        state.mode.vdisplay);
+        kK230LandscapeWidth,
+        kK230LandscapeHeight);
     if (destination.scale <= 0 || destination.width <= 0 || destination.height <= 0) {
         return;
     }
@@ -543,10 +554,17 @@ void TdvpK230Drm::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
     for (int source_y = 0; source_y < canvas_height; ++source_y) {
         const auto* source_row = canvas_xrgb8888 + source_y * source_stride;
         for (int vertical = 0; vertical < destination.scale; ++vertical) {
-            auto* destination_row = destination_pixels +
-                (destination.y + source_y * destination.scale + vertical) * destination_stride + destination.x;
+            const int landscape_y = destination.y + source_y * destination.scale + vertical;
             for (int source_x = 0; source_x < canvas_width; ++source_x) {
-                std::fill_n(destination_row + source_x * destination.scale, destination.scale, source_row[source_x]);
+                for (int horizontal = 0; horizontal < destination.scale; ++horizontal) {
+                    const int landscape_x = destination.x + source_x * destination.scale + horizontal;
+                    const auto scanout = k230_landscape_to_scanout(
+                        landscape_x,
+                        landscape_y,
+                        state.mode.hdisplay,
+                        state.mode.vdisplay);
+                    destination_pixels[scanout.y * destination_stride + scanout.x] = source_row[source_x];
+                }
             }
         }
     }

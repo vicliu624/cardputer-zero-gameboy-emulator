@@ -137,8 +137,10 @@ int main()
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_SETCRTC"), "TDVP programs a KMS CRTC");
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_GETCRTC"), "TDVP records original KMS state");
     require(contains(tdvp_drm, "drm_card_paths"), "TDVP finds the active DRM card dynamically");
-    require(contains(tdvp_drm, "cardN node exposes a connected 1232x568 KMS output"),
-            "TDVP reports an exact display-mode mismatch");
+    require(contains(tdvp_drm, "568x1232 native or 1232x568 landscape KMS output"),
+            "TDVP recognizes the K230 native and landscape KMS modes");
+    require(contains(tdvp_drm, "k230_landscape_to_scanout"),
+            "TDVP maps landscape UI coordinates into the native KMS scanout");
     require(contains(tdvp_drm, "restore DRM_IOCTL_MODE_SETCRTC"), "TDVP restores KMS state on shutdown");
     require(contains(tdvp_drm, "disable inactive DRM CRTC during restore"), "TDVP restores an initially inactive CRTC");
     require(!contains(tdvp_drm, "linux/fb.h"), "TDVP DRM backend does not use fbdev");
