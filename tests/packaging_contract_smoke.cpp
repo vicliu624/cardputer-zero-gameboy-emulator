@@ -58,9 +58,9 @@ int main()
     const auto tdvp_launcher = read_file(root / "packaging" / "tdvp-k230" / "cardputer-zero-gba");
     require(contains(tdvp_launcher, "/opt/tdvp-cardputer-zero-gba"), "TDVP private runtime root");
     require(contains(tdvp_launcher, "--device-profile tdvp-k230"), "TDVP device profile launcher option");
-    require(contains(tdvp_launcher, "DRM/KMS"), "TDVP native DRM/KMS launcher contract");
-    require(!contains(tdvp_launcher, "SDL_VIDEODRIVER"), "TDVP launcher must not force an SDL video backend");
-    require(!contains(tdvp_launcher, "WAYLAND_DISPLAY"), "TDVP launcher must not require Wayland");
+    require(contains(tdvp_launcher, "DRM/KMS"), "TDVP Wayland client preserves the DRM/KMS ownership contract");
+    require(contains(tdvp_launcher, "SDL_VIDEODRIVER=wayland"), "TDVP launcher selects the compositor client backend");
+    require(!contains(tdvp_launcher, "SDL_VIDEODRIVER=fbdev"), "TDVP launcher must not select fbdev");
     const auto tdvp_desktop = read_file(root / "packaging" / "tdvp-k230" / "tdvp-cardputer-zero-gba.desktop");
     require(contains(tdvp_desktop, "Exec=/usr/bin/cardputer-zero-gba"), "TDVP desktop launch path");
     require(contains(tdvp_desktop, "Categories=Game;Emulator;"), "TDVP desktop category");
@@ -108,6 +108,8 @@ int main()
     require(contains(sdl_platform, "SDL_RENDERER_ACCELERATED"), "accelerated renderer");
     require(contains(sdl_platform, "PresentationProfile::TdvpK230"), "TDVP presentation profile");
     require(contains(sdl_platform, "integer_presentation_rect"), "TDVP integer output rectangle");
+    require(contains(sdl_platform, "tdvp_direct_drm_requested"), "TDVP direct DRM is opt-in only");
+    require(contains(sdl_platform, "SDL Wayland client presentation path"), "TDVP defaults to Wayland client presentation");
     require(!contains(sdl_platform, "SDL_RENDERER_PRESENTVSYNC"), "renderer vsync removed");
     require(contains(renderer, "{0, 79}"), "bottom slot 1");
     require(contains(renderer, "{79, 54}"), "bottom slot 2");

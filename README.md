@@ -47,10 +47,11 @@ The same frontend also has a TDVP K230 presentation profile for the
 Buildroot 2025.02.1 `riscv64-lp64d` platform. Its physical panel runs in
 landscape at 1232x568. K230 uses its own 410x189 application layout: a native
 240x160 GBA frame is placed between expanded information/control rails and
-passed through the DRM/KMS adapter at a 3x integer scale. The resulting game
-viewport is 720x480 physical pixels, and the full application canvas occupies
-1230x567 at `(1,0)` on the panel. This preserves crisp pixels without fbdev;
-the adapter captures and restores the prior KMS CRTC state.
+presented to the labwc Wayland compositor at a 3x integer scale. The resulting
+game viewport is 720x480 physical pixels, and the full application canvas
+occupies 1230x567 at `(1,0)` on the landscape output. Labwc retains DRM/KMS
+CRTC ownership and the panel transform, so the application preserves crisp
+pixels without fbdev or direct modesetting.
 
 Run it manually on a compatible device with:
 

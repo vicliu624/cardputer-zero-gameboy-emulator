@@ -9,7 +9,9 @@ if [ ! -x "$runtime" ]; then
     exit 127
 fi
 
-# The tdvp-k230 profile acquires its application-local DRM/KMS scanout itself.
-# SDL is retained for audio only on this path. Do not force Wayland, fbdev, or
-# another SDL video driver here; that would bypass the native KMS adapter.
+# The TDVP desktop runs labwc, which owns DRM master. This application is a
+# Wayland client: labwc continues to own the DRM/KMS CRTC and panel transform.
+# That is still the device's DRM path, but does not let an app modeset global
+# display state. Do not select fbdev or KMSDRM here.
+export SDL_VIDEODRIVER=wayland
 exec "$runtime" --device-profile tdvp-k230 "$@"

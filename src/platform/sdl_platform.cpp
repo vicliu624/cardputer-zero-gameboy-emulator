@@ -2,11 +2,22 @@
 
 #include <SDL.h>
 
+#include <cstdlib>
 #include <iostream>
 
 #include "render/layout.hpp"
 
 namespace czgba::platform {
+
+namespace {
+
+bool tdvp_direct_drm_requested()
+{
+    const char* value = std::getenv("CARDPUTER_ZERO_GBA_TDVP_DIRECT_DRM");
+    return value != nullptr && value[0] == '1' && value[1] == '\0';
+}
+
+} // namespace
 
 SdlPlatform::~SdlPlatform()
 {
@@ -22,13 +33,18 @@ bool SdlPlatform::init(const PlatformConfig& config)
         std::cerr << "Invalid application canvas dimensions\n";
         return false;
     }
-    if (presentation_profile_ == PresentationProfile::TdvpK230) {
+    if (presentation_profile_ == PresentationProfile::TdvpK230 && tdvp_direct_drm_requested()) {
         auto drm = std::make_unique<TdvpK230Drm>();
         if (drm->init()) {
             tdvp_k230_drm_ = std::move(drm);
             return true;
         }
-        std::cerr << "TDVP K230 DRM presentation unavailable; falling back to SDL for development only\n";
+        std::cerr << "TDVP K230 direct DRM presentation unavailable; falling back to SDL Wayland\n";
+    } else if (presentation_profile_ == PresentationProfile::TdvpK230) {
+        // Labwc owns DRM master on the supported device. Its Wayland client
+        // path remains backed by DRM/KMS, but prevents an application from
+        // modesetting the system compositor's CRTC.
+        std::cout << "TDVP K230: using the SDL Wayland client presentation path\n";
     }
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
@@ -74,11 +90,19 @@ bool SdlPlatform::init(const PlatformConfig& config)
         SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
     }
 
+    const auto renderer_flags = presentation_profile_ == PresentationProfile::TdvpK230
+        ? SDL_RENDERER_SOFTWARE
+        : SDL_RENDERER_ACCELERATED;
     renderer_ = SDL_CreateRenderer(
         window_,
         -1,
-        SDL_RENDERER_ACCELERATED);
+        renderer_flags);
 
+    if (renderer_ == nullptr && presentation_profile_ == PresentationProfile::TdvpK230) {
+        // The K230 package deliberately uses wl_shm software presentation;
+        // there is no app-owned EGL/KMS renderer to acquire.
+        renderer_ = SDL_CreateRenderer(window_, -1, 0);
+    }
     if (renderer_ == nullptr) {
         std::cerr << "SDL_CreateRenderer failed: " << SDL_GetError() << '\n';
         shutdown();

@@ -33,8 +33,9 @@ K230's physical shell chrome is not part of this application UI.
 - GBA viewport: native 240x160; Cardputer Zero at `x=40,y=0`, TDVP K230 at
   `x=85,y=3`
 - Window policy: Cardputer Zero uses a fixed 320x170 borderless surface;
-  TDVP K230 owns a 1232x568 landscape DRM/KMS CRTC while the application is
-  running and integer-scales its `410x189` canvas to `1230x567` at `(1,0)`
+  TDVP K230 is a labwc Wayland client, while labwc retains the DRM/KMS CRTC
+  and integer-scales the application's `410x189` canvas to `1230x567` at
+  `(1,0)`
 - Package delivery: Debian `.deb`, built reproducibly through Docker Compose
 - ROM policy: user-provided `.gba` files only; no bundled ROMs or BIOS
 
