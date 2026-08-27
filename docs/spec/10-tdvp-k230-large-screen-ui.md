@@ -13,7 +13,7 @@ video format.
 | --- | --- |
 | Emulator core | mGBA continues to produce an unmodified 240x160 GBA frame. Game coordinates and input semantics do not change. |
 | Application layout | Cardputer Zero keeps its 320x170 layout. TDVP K230 gets its own 410x189 layout, with larger information and command regions. |
-| Physical presentation | The user-visible UI coordinate system is 1232x568 landscape. Labwc owns the verified RM69A10 connector's 568x1232 native DRM scanout and panel transform; the application is an SDL Wayland client that presents the TDVP canvas at 3x nearest-neighbour scaling to 1230x567 at landscape `(1, 0)`. |
+| Physical presentation | The user-visible UI coordinate system is 1232x568 landscape. Labwc owns the verified RM69A10 connector's 568x1232 native DRM scanout and panel transform; the application is an SDL Wayland client that presents the TDVP canvas through a `wl_shm` window surface at 3x nearest-neighbour scaling to 1230x567 at landscape `(1, 0)`. |
 | Device system UI | Firmware shell chrome is owned by the device shell, not this application, and is not reproduced by the emulator. |
 | Release boundary | The package remains `tdvp-cardputer-zero-gba` for `tdvp-k230-br2025.02.1-glibc2.33-rv64-lp64d-k6.6.36-r1`. |
 

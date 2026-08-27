@@ -9,6 +9,7 @@
 #include "platform/tdvp_k230_drm.hpp"
 
 struct SDL_Renderer;
+struct SDL_Surface;
 struct SDL_Texture;
 struct SDL_Window;
 
@@ -39,12 +40,14 @@ public:
 private:
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
+    SDL_Surface* window_surface_ = nullptr;
     SDL_Texture* texture_ = nullptr;
     input::InputMapper input_mapper_;
     std::unique_ptr<TdvpK230Drm> tdvp_k230_drm_;
     PresentationProfile presentation_profile_ = PresentationProfile::CardputerZero;
     int canvas_width_ = 320;
     int canvas_height_ = 170;
+    bool tdvp_k230_wayland_surface_ = false;
     bool should_quit_ = false;
 };
 

@@ -110,6 +110,8 @@ int main()
     require(contains(sdl_platform, "integer_presentation_rect"), "TDVP integer output rectangle");
     require(contains(sdl_platform, "tdvp_direct_drm_requested"), "TDVP direct DRM is opt-in only");
     require(contains(sdl_platform, "SDL Wayland client presentation path"), "TDVP defaults to Wayland client presentation");
+    require(contains(sdl_platform, "SDL_GetWindowSurface"), "TDVP Wayland presentation uses a wl_shm window surface");
+    require(contains(sdl_platform, "SDL_UpdateWindowSurface"), "TDVP Wayland presentation commits its wl_shm window surface");
     require(!contains(sdl_platform, "SDL_RENDERER_PRESENTVSYNC"), "renderer vsync removed");
     require(contains(renderer, "{0, 79}"), "bottom slot 1");
     require(contains(renderer, "{79, 54}"), "bottom slot 2");

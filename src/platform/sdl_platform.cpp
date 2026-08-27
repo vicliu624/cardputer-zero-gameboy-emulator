@@ -90,19 +90,25 @@ bool SdlPlatform::init(const PlatformConfig& config)
         SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
     }
 
-    const auto renderer_flags = presentation_profile_ == PresentationProfile::TdvpK230
-        ? SDL_RENDERER_SOFTWARE
-        : SDL_RENDERER_ACCELERATED;
+    if (presentation_profile_ == PresentationProfile::TdvpK230) {
+        // K230's SDL Wayland build deliberately has no GL/EGL renderer. Use
+        // the compositor-provided wl_shm window surface instead of attempting
+        // to acquire a renderer that would depend on app-owned graphics state.
+        window_surface_ = SDL_GetWindowSurface(window_);
+        if (window_surface_ == nullptr) {
+            std::cerr << "SDL_GetWindowSurface failed: " << SDL_GetError() << '\n';
+            shutdown();
+            return false;
+        }
+        tdvp_k230_wayland_surface_ = true;
+        return true;
+    }
+
     renderer_ = SDL_CreateRenderer(
         window_,
         -1,
-        renderer_flags);
+        SDL_RENDERER_ACCELERATED);
 
-    if (renderer_ == nullptr && presentation_profile_ == PresentationProfile::TdvpK230) {
-        // The K230 package deliberately uses wl_shm software presentation;
-        // there is no app-owned EGL/KMS renderer to acquire.
-        renderer_ = SDL_CreateRenderer(window_, -1, 0);
-    }
     if (renderer_ == nullptr) {
         std::cerr << "SDL_CreateRenderer failed: " << SDL_GetError() << '\n';
         shutdown();
@@ -135,6 +141,8 @@ void SdlPlatform::shutdown()
         tdvp_k230_drm_->shutdown();
         tdvp_k230_drm_.reset();
     }
+    window_surface_ = nullptr;
+    tdvp_k230_wayland_surface_ = false;
     if (texture_ != nullptr) {
         SDL_DestroyTexture(texture_);
         texture_ = nullptr;
@@ -182,6 +190,47 @@ void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
     }
     if (tdvp_k230_drm_) {
         tdvp_k230_drm_->present(canvas_xrgb8888, canvas_width, canvas_height, pitch_bytes);
+        return;
+    }
+    if (tdvp_k230_wayland_surface_) {
+        if (window_surface_ == nullptr) {
+            return;
+        }
+        if (SDL_MUSTLOCK(window_surface_) && SDL_LockSurface(window_surface_) != 0) {
+            std::cerr << "SDL_LockSurface failed: " << SDL_GetError() << '\n';
+            return;
+        }
+        SDL_FillRect(window_surface_, nullptr, 0);
+        const auto destination = integer_presentation_rect(
+            canvas_width_,
+            canvas_height_,
+            window_surface_->w,
+            window_surface_->h);
+        SDL_Surface* source = SDL_CreateRGBSurfaceWithFormatFrom(
+            const_cast<std::uint32_t*>(canvas_xrgb8888),
+            canvas_width_,
+            canvas_height_,
+            32,
+            pitch_bytes,
+            SDL_PIXELFORMAT_XRGB8888);
+        if (source != nullptr && destination.width > 0 && destination.height > 0) {
+            SDL_Rect target{destination.x, destination.y, destination.width, destination.height};
+            if (SDL_BlitScaled(source, nullptr, window_surface_, &target) != 0) {
+                std::cerr << "SDL_BlitScaled failed: " << SDL_GetError() << '\n';
+            }
+        }
+        if (source == nullptr) {
+            std::cerr << "SDL_CreateRGBSurfaceWithFormatFrom failed: " << SDL_GetError() << '\n';
+        }
+        if (source != nullptr) {
+            SDL_FreeSurface(source);
+        }
+        if (SDL_MUSTLOCK(window_surface_)) {
+            SDL_UnlockSurface(window_surface_);
+        }
+        if (SDL_UpdateWindowSurface(window_) != 0) {
+            std::cerr << "SDL_UpdateWindowSurface failed: " << SDL_GetError() << '\n';
+        }
         return;
     }
     SDL_UpdateTexture(texture_, nullptr, canvas_xrgb8888, pitch_bytes);
