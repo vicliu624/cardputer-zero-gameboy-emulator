@@ -61,6 +61,7 @@ int main()
     require(contains(tdvp_launcher, "DRM/KMS"), "TDVP Wayland client preserves the DRM/KMS ownership contract");
     require(contains(tdvp_launcher, "SDL_VIDEODRIVER=wayland"), "TDVP launcher selects the compositor client backend");
     require(!contains(tdvp_launcher, "SDL_VIDEODRIVER=fbdev"), "TDVP launcher must not select fbdev");
+    require(contains(tdvp_launcher, "cd -- \"$HOME\""), "TDVP launcher starts relative ROM discovery from the user home");
     const auto tdvp_desktop = read_file(root / "packaging" / "tdvp-k230" / "tdvp-cardputer-zero-gba.desktop");
     require(contains(tdvp_desktop, "Exec=/usr/bin/cardputer-zero-gba"), "TDVP desktop launch path");
     require(contains(tdvp_desktop, "Categories=Game;Emulator;"), "TDVP desktop category");

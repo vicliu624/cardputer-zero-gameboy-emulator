@@ -14,4 +14,7 @@ fi
 # That is still the device's DRM path, but does not let an app modeset global
 # display state. Do not select fbdev or KMSDRM here.
 export SDL_VIDEODRIVER=wayland
+if [ -n "${HOME:-}" ] && [ -d "$HOME" ]; then
+    cd -- "$HOME"
+fi
 exec "$runtime" --device-profile tdvp-k230 "$@"
