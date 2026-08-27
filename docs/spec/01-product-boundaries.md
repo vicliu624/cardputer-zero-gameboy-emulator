@@ -20,7 +20,8 @@ Positioning:
 A GBA emulator frontend using libmgba as the emulator core and SDL2 where a
 runtime adapter is required. Cardputer Zero has the compact 320x170 Framed
 Pixel UI; TDVP K230 has its own 410x189 large-screen application layout and
- Wayland-client presentation boundary on the device's DRM/KMS compositor.
+ Wayland-client `wl_shm` presentation boundary on the device's DRM/KMS
+ compositor.
 ```
 
 The project is not a new GBA emulator core. CPU, PPU, APU, cartridge behavior,
@@ -50,7 +51,8 @@ TDVP K230 required experience:
 - A 410x189 application canvas gives the K230 wider status/control rails and
   an F1--F5 command bar without changing emulation coordinates.
 - The Wayland presentation is 1230x567 at `(1,0)` on the 1232x568 landscape
-  output; labwc retains DRM/KMS ownership. The application never uses fbdev,
+  output; labwc retains DRM/KMS ownership. The application submits CPU-owned
+  XRGB `wl_shm` buffers and never uses fbdev, SDL/GLES software rasterization,
   fractional scaling, cropping, or filtering.
 
 Layout name:

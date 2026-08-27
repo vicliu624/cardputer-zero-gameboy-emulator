@@ -65,6 +65,15 @@ int main()
     require(pixel_at(canvas, T::BarX, T::BarY) != render::rgb(7, 10, 13),
             "expanded F1-F5 command bar is rendered");
 
+    const auto initial_static_generation = renderer.tdvp_playing_static_cache_generation();
+    renderer.draw(state);
+    require(renderer.tdvp_playing_static_cache_generation() == initial_static_generation,
+            "unchanged K230 playing chrome is reused from the static cache");
+    state.status.current_slot = 2;
+    renderer.draw(state);
+    require(renderer.tdvp_playing_static_cache_generation() == initial_static_generation + 1,
+            "K230 playing chrome cache rebuilds when UI status changes");
+
     const auto physical = platform::integer_presentation_rect(
         canvas.width(), canvas.height(), 1232, 568);
     require(physical.scale == 3 && physical.width == 1230 && physical.height == 567,

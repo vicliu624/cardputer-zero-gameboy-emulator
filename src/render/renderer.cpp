@@ -117,8 +117,19 @@ Canvas& Renderer::canvas()
     return canvas_;
 }
 
+std::uint64_t Renderer::tdvp_playing_static_cache_generation() const
+{
+    return tdvp_playing_static_cache_generation_;
+}
+
 void Renderer::draw_tdvp_k230(const app::RenderState& state)
 {
+    if (state.mode == app::AppMode::Playing) {
+        draw_tdvp_k230_playing(state);
+        return;
+    }
+
+    tdvp_playing_static_cache_valid_ = false;
     canvas_.clear(kBlack);
     draw_tdvp_k230_background();
 
@@ -146,6 +157,48 @@ void Renderer::draw_tdvp_k230(const app::RenderState& state)
     } else if (state.mode == app::AppMode::Settings) {
         draw_tdvp_k230_overlay("SETTINGS", 0);
     }
+}
+
+bool Renderer::tdvp_playing_static_cache_matches(const app::RenderState& state) const
+{
+    return tdvp_playing_static_cache_valid_ &&
+           tdvp_cached_battery_percent_ == state.status.battery_percent &&
+           tdvp_cached_slot_ == state.status.current_slot &&
+           tdvp_cached_fast_forward_ == state.status.fast_forward &&
+           tdvp_cached_toast_ == state.status.toast;
+}
+
+void Renderer::rebuild_tdvp_playing_static_cache(const app::RenderState& state)
+{
+    canvas_.clear(kBlack);
+    draw_tdvp_k230_background();
+    draw_tdvp_k230_side_panels(state.status);
+    draw_tdvp_k230_bottom_bar(state);
+    draw_tdvp_k230_toast(state.status.toast);
+
+    const auto pixel_count = static_cast<std::size_t>(canvas_.width()) * static_cast<std::size_t>(canvas_.height());
+    tdvp_playing_static_pixels_.assign(canvas_.data(), canvas_.data() + pixel_count);
+    tdvp_cached_battery_percent_ = state.status.battery_percent;
+    tdvp_cached_slot_ = state.status.current_slot;
+    tdvp_cached_fast_forward_ = state.status.fast_forward;
+    tdvp_cached_toast_ = state.status.toast;
+    tdvp_playing_static_cache_valid_ = true;
+    ++tdvp_playing_static_cache_generation_;
+}
+
+void Renderer::draw_tdvp_k230_playing(const app::RenderState& state)
+{
+    if (!tdvp_playing_static_cache_matches(state)) {
+        rebuild_tdvp_playing_static_cache(state);
+    } else {
+        const auto pixel_count = static_cast<std::size_t>(canvas_.width()) * static_cast<std::size_t>(canvas_.height());
+        std::copy_n(tdvp_playing_static_pixels_.data(), pixel_count, canvas_.data());
+    }
+
+    // This is the only visual region that normally changes at 60 Hz. The
+    // Wayland wl_shm presenter recognises the same rectangle and performs the
+    // physical 3x nearest-neighbour write without touching cached chrome.
+    draw_tdvp_k230_game(state.game_frame);
 }
 
 void Renderer::draw_tdvp_k230_background()

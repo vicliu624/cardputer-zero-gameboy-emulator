@@ -22,6 +22,8 @@ option(CZ_GBA_PREFER_BUNDLED_SDL2 "Build bundled SDL2 before searching the targe
 option(CZ_GBA_SDL_SHARED "Build bundled SDL2 as a shared library" ON)
 option(CZ_GBA_SDL_STATIC "Build bundled SDL2 as a static library" OFF)
 option(CZ_GBA_REQUIRE_K230_DRM "Fail configuration unless Linux DRM/KMS UAPI headers are available" OFF)
+option(CZ_GBA_REQUIRE_K230_WAYLAND_SHM "Fail configuration unless the K230 Wayland wl_shm client ABI is available" OFF)
+set(CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY "" CACHE PATH "Firmware-matched TDVP Wayland client development overlay")
 option(CZ_GBA_USE_SYSTEM_MGBA "Use system libmgba instead of bundled mGBA" OFF)
 option(CZ_GBA_BUNDLE_MGBA "Build bundled mGBA from extern/mgba" ON)
 set(CZ_GBA_MGBA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/mgba" CACHE PATH "mGBA source checkout")
@@ -122,6 +124,7 @@ add_executable(cardputer-zero-gba
     src/platform/sdl_platform.cpp
     src/platform/sdl_audio.cpp
     src/platform/tdvp_k230_drm.cpp
+    src/platform/tdvp_k230_wayland_shm.cpp
     src/input/input_mapper.cpp
     src/core/mgba_core.cpp
     src/render/canvas.cpp
@@ -214,6 +217,36 @@ endif()
 
 if (CZ_GBA_REQUIRE_K230_DRM AND NOT CZ_GBA_HAS_DRM_KMS)
     message(FATAL_ERROR "TDVP K230 packaging requires Linux DRM/KMS UAPI headers in the selected SDK sysroot")
+endif()
+
+set(CZ_GBA_HAS_TDVP_WAYLAND_SHM OFF)
+if (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Buildroot)$")
+    set(CZ_GBA_WAYLAND_HINTS)
+    if (CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY)
+        list(APPEND CZ_GBA_WAYLAND_HINTS "${CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY}")
+    endif()
+    find_path(CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR
+        NAMES wayland-client.h
+        HINTS ${CZ_GBA_WAYLAND_HINTS}
+        PATH_SUFFIXES include)
+    find_library(CZ_GBA_WAYLAND_CLIENT_LIBRARY
+        NAMES wayland-client
+        HINTS ${CZ_GBA_WAYLAND_HINTS}
+        PATH_SUFFIXES lib)
+    find_library(CZ_GBA_FFI_LIBRARY
+        NAMES ffi
+        HINTS ${CZ_GBA_WAYLAND_HINTS}
+        PATH_SUFFIXES lib)
+    if (CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR AND CZ_GBA_WAYLAND_CLIENT_LIBRARY AND CZ_GBA_FFI_LIBRARY)
+        set(CZ_GBA_HAS_TDVP_WAYLAND_SHM ON)
+        target_include_directories(cardputer-zero-gba SYSTEM PRIVATE "${CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR}")
+        target_link_libraries(cardputer-zero-gba PRIVATE "${CZ_GBA_WAYLAND_CLIENT_LIBRARY}" "${CZ_GBA_FFI_LIBRARY}")
+        target_compile_definitions(cardputer-zero-gba PRIVATE CZ_GBA_HAS_TDVP_WAYLAND_SHM=1)
+    endif()
+endif()
+
+if (CZ_GBA_REQUIRE_K230_WAYLAND_SHM AND NOT CZ_GBA_HAS_TDVP_WAYLAND_SHM)
+    message(FATAL_ERROR "TDVP K230 packaging requires the firmware-matched Wayland wl_shm client ABI")
 endif()
 
 target_include_directories(cardputer-zero-gba-audio-core-smoke

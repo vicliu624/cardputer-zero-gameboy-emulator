@@ -90,6 +90,17 @@ bool SdlPlatform::init(const PlatformConfig& config)
         SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
     }
 
+    if (presentation_profile_ == PresentationProfile::TdvpK230) {
+        auto shm = std::make_unique<TdvpK230WaylandShm>();
+        if (!shm->init(window_)) {
+            std::cerr << "TDVP K230 wl_shm presentation unavailable; refusing software GLES fallback\n";
+            shutdown();
+            return false;
+        }
+        tdvp_k230_wayland_shm_ = std::move(shm);
+        return true;
+    }
+
     renderer_ = SDL_CreateRenderer(
         window_,
         -1,
@@ -126,6 +137,10 @@ void SdlPlatform::shutdown()
     if (tdvp_k230_drm_) {
         tdvp_k230_drm_->shutdown();
         tdvp_k230_drm_.reset();
+    }
+    if (tdvp_k230_wayland_shm_) {
+        tdvp_k230_wayland_shm_->shutdown();
+        tdvp_k230_wayland_shm_.reset();
     }
     if (texture_ != nullptr) {
         SDL_DestroyTexture(texture_);
@@ -174,6 +189,10 @@ void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
     }
     if (tdvp_k230_drm_) {
         tdvp_k230_drm_->present(canvas_xrgb8888, canvas_width, canvas_height, pitch_bytes);
+        return;
+    }
+    if (tdvp_k230_wayland_shm_) {
+        tdvp_k230_wayland_shm_->present(canvas_xrgb8888, canvas_width, canvas_height, pitch_bytes);
         return;
     }
     SDL_UpdateTexture(texture_, nullptr, canvas_xrgb8888, pitch_bytes);

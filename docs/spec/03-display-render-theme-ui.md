@@ -117,10 +117,11 @@ framed_pixel
 `tdvp-k230` maps to a dedicated K230 application layout as well as a physical
 output profile. The K230 renderer owns a `410x189` canvas, preserves the GBA
 source rectangle at `240x160`, and places it at `(85,3)` between wider UI
-rails. The SDL Wayland client presents that canvas at a 3x integer scale:
-`1230x567` at `(1,0)` on the 1232x568 landscape output. The final game
-viewport is thus `720x480` physical pixels. Labwc owns DRM/KMS and the
-renderer does not issue DRM operations. See `08-tdvp-k230.md` for the
+rails. The application copies the canvas into CPU-owned XRGB `wl_shm` buffers
+at a 3x integer scale: `1230x567` at `(1,0)` on the 1232x568 landscape output.
+The final game viewport is thus `720x480` physical pixels. Labwc owns DRM/KMS
+and the renderer does not issue DRM operations or invoke SDL/GLES rendering.
+See `08-tdvp-k230.md` for the
 ABI/presentation boundary and
 `10-tdvp-k230-large-screen-ui.md` for K230 UI geometry.
 

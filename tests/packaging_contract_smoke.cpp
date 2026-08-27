@@ -108,13 +108,17 @@ int main()
     const auto renderer = read_file(root / "src" / "render" / "renderer.cpp");
     const auto render_layout = read_file(root / "src" / "render" / "layout.hpp");
     const auto sdl_platform = read_file(root / "src" / "platform" / "sdl_platform.cpp");
-    require(contains(sdl_platform, "SDL_RENDERER_ACCELERATED"), "accelerated renderer");
+    const auto tdvp_shm = read_file(root / "src" / "platform" / "tdvp_k230_wayland_shm.cpp");
+    require(contains(sdl_platform, "SDL_RENDERER_ACCELERATED"), "Cardputer Zero keeps its SDL renderer");
     require(contains(sdl_platform, "PresentationProfile::TdvpK230"), "TDVP presentation profile");
-    require(contains(sdl_platform, "integer_presentation_rect"), "TDVP integer output rectangle");
     require(contains(sdl_platform, "tdvp_direct_drm_requested"), "TDVP direct DRM is opt-in only");
-    require(contains(sdl_platform, "SDL Wayland client presentation path"), "TDVP defaults to Wayland client presentation");
-    require(contains(sdl_platform, "SDL_RENDERER_ACCELERATED"), "TDVP Wayland presentation uses the EGL/GLES renderer");
+    require(contains(sdl_platform, "TdvpK230WaylandShm"), "TDVP defaults to direct wl_shm presentation");
+    require(contains(sdl_platform, "refusing software GLES fallback"), "TDVP refuses software GLES fallback");
     require(!contains(sdl_platform, "SDL_RENDERER_PRESENTVSYNC"), "renderer vsync removed");
+    require(contains(tdvp_shm, "wl_shm_create_pool"), "TDVP creates direct Wayland shared-memory pools");
+    require(contains(tdvp_shm, "wl_surface_attach"), "TDVP attaches shared-memory buffers directly to Wayland");
+    require(contains(tdvp_shm, "scale_game_pixels"), "TDVP does dedicated nearest-neighbour game scaling");
+    require(contains(tdvp_shm, "static_generation"), "TDVP caches static scaled UI buffers");
     require(contains(renderer, "{0, 79}"), "bottom slot 1");
     require(contains(renderer, "{79, 54}"), "bottom slot 2");
     require(contains(renderer, "{133, 54}"), "bottom slot 3");
@@ -130,6 +134,7 @@ int main()
     require(contains(render_layout, "static constexpr int GameW = 240"), "TDVP preserves native GBA width");
     require(contains(renderer, "F1 MENU"), "TDVP command bar shows K230 function-row labels");
     require(contains(renderer, "draw_tdvp_k230_side_panels"), "TDVP renders expanded side rails");
+    require(contains(renderer, "tdvp_playing_static_cache_generation_"), "TDVP renderer caches unchanged playing chrome");
 
     const auto cmake = read_file(root / "CMakeLists.txt");
     require(contains(cmake, "APPLaunch/applications"), "APPLaunch desktop install path");
@@ -138,6 +143,7 @@ int main()
     require(contains(cmake, "packaging/cardputer-zero-gba-applaunch"), "APPLaunch wrapper installed");
     require(contains(cmake, "CZ_GBA_PREFER_BUNDLED_SDL2"), "K230 can prefer bundled SDL2");
     require(contains(cmake, "CZ_GBA_REQUIRE_K230_DRM"), "K230 package can require DRM/KMS UAPI headers");
+    require(contains(cmake, "CZ_GBA_REQUIRE_K230_WAYLAND_SHM"), "K230 package requires Wayland shared-memory client ABI");
     const auto tdvp_drm = read_file(root / "src" / "platform" / "tdvp_k230_drm.cpp");
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_CREATE_DUMB"), "TDVP creates native KMS dumb buffers");
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_SETCRTC"), "TDVP programs a KMS CRTC");

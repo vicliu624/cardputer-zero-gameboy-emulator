@@ -7,6 +7,7 @@
 #include "input/input_mapper.hpp"
 #include "platform/presentation_profile.hpp"
 #include "platform/tdvp_k230_drm.hpp"
+#include "platform/tdvp_k230_wayland_shm.hpp"
 
 struct SDL_Renderer;
 struct SDL_Texture;
@@ -42,6 +43,7 @@ private:
     SDL_Texture* texture_ = nullptr;
     input::InputMapper input_mapper_;
     std::unique_ptr<TdvpK230Drm> tdvp_k230_drm_;
+    std::unique_ptr<TdvpK230WaylandShm> tdvp_k230_wayland_shm_;
     PresentationProfile presentation_profile_ = PresentationProfile::CardputerZero;
     int canvas_width_ = 320;
     int canvas_height_ = 170;

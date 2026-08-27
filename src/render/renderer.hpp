@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "app/app.hpp"
 #include "core/gba_video_frame.hpp"
@@ -17,9 +19,13 @@ public:
     void draw(const app::RenderState& state);
     const Canvas& canvas() const;
     Canvas& canvas();
+    std::uint64_t tdvp_playing_static_cache_generation() const;
 
 private:
     void draw_tdvp_k230(const app::RenderState& state);
+    void draw_tdvp_k230_playing(const app::RenderState& state);
+    bool tdvp_playing_static_cache_matches(const app::RenderState& state) const;
+    void rebuild_tdvp_playing_static_cache(const app::RenderState& state);
     void draw_tdvp_k230_background();
     void draw_tdvp_k230_game(const core::GbaVideoFrame* frame);
     void draw_tdvp_k230_game_test_pattern();
@@ -59,6 +65,13 @@ private:
     Canvas canvas_;
     Font5x7 font_;
     Utf8Text utf8_text_;
+    std::vector<Canvas::Pixel> tdvp_playing_static_pixels_;
+    int tdvp_cached_battery_percent_ = -1;
+    int tdvp_cached_slot_ = -1;
+    bool tdvp_cached_fast_forward_ = false;
+    std::string tdvp_cached_toast_;
+    bool tdvp_playing_static_cache_valid_ = false;
+    std::uint64_t tdvp_playing_static_cache_generation_ = 0;
 };
 
 } // namespace czgba::render
