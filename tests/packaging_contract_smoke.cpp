@@ -72,6 +72,7 @@ int main()
     require(contains(sdl_audio, "desired.callback = nullptr"), "queued audio device");
     require(contains(sdl_audio, "SDL_QueueAudio"), "queued audio write path");
     require(contains(sdl_audio, "SDL_GetQueuedAudioSize"), "queued audio size check");
+    require(contains(sdl_audio, "SDL_GetCurrentAudioDriver"), "audio startup reports the selected runtime driver");
     require(contains(sdl_audio, "start_buffer_samples_"), "audio prebuffer");
     require(contains(sdl_audio, "playback_started_"), "audio playback start state");
     require(contains(sdl_audio, "queue_limit_samples_"), "audio queue limit");

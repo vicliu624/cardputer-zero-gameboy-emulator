@@ -65,6 +65,8 @@ bool SdlAudio::init(const SdlAudioConfig& config)
 
     SDL_PauseAudioDevice(device_id_, 1);
 
+    const char* driver = SDL_GetCurrentAudioDriver();
+    std::cout << "SDL audio driver: " << (driver != nullptr ? driver : "unknown") << '\n';
     std::cout << "SDL audio: " << sample_rate_ << " Hz, " << channels_
               << " channels, queued audio limit " << queue_limit_samples_ << " samples\n";
     return true;
