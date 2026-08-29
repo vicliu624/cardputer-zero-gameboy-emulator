@@ -68,6 +68,16 @@ int main()
             "TDVP desktop uses its package-owned absolute icon path");
     require(contains(tdvp_desktop, "Categories=Game;Emulator;"), "TDVP desktop category");
 
+    const auto tdvp_gba_launcher = read_file(root / "packaging" / "tdvp-k230" / "tdvp-gba");
+    require(contains(tdvp_gba_launcher, "/opt/tdvp-gba"), "new TDVP runtime root");
+    require(contains(tdvp_gba_launcher, "--device-profile tdvp-k230"), "new TDVP device profile launcher option");
+    require(contains(tdvp_gba_launcher, "SDL_VIDEODRIVER=wayland"), "new TDVP launcher selects the compositor client backend");
+    require(!contains(tdvp_gba_launcher, "SDL_VIDEODRIVER=fbdev"), "new TDVP launcher must not select fbdev");
+    const auto tdvp_gba_desktop = read_file(root / "packaging" / "tdvp-k230" / "tdvp-gba.desktop");
+    require(contains(tdvp_gba_desktop, "Exec=/usr/bin/tdvp-gba"), "new TDVP desktop launch path");
+    require(contains(tdvp_gba_desktop, "Icon=/usr/share/icons/hicolor/128x128/apps/tdvp-gba.png"),
+            "new TDVP desktop uses its package-owned absolute icon path");
+
     const auto sdl_audio = read_file(root / "src" / "platform" / "sdl_audio.cpp");
     require(contains(sdl_audio, "desired.callback = nullptr"), "queued audio device");
     require(contains(sdl_audio, "SDL_QueueAudio"), "queued audio write path");

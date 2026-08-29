@@ -27,6 +27,7 @@ set(CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY "" CACHE PATH "Firmware-matched TDVP Wayland
 option(CZ_GBA_USE_SYSTEM_MGBA "Use system libmgba instead of bundled mGBA" OFF)
 option(CZ_GBA_BUNDLE_MGBA "Build bundled mGBA from extern/mgba" ON)
 set(CZ_GBA_MGBA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/mgba" CACHE PATH "mGBA source checkout")
+set(CZ_GBA_MGBA_ROOT "" CACHE PATH "Optional libmgba installation prefix for a system mGBA build")
 option(CZ_GBA_ENABLE_DEB_PACKAGE "Enable CPack Debian package generation" OFF)
 set(CZ_GBA_PACKAGE_ARCHITECTURE "" CACHE STRING "Debian package architecture override, for example arm64")
 set(CZ_GBA_PRIVATE_LIBDIR "lib/cardputer-zero-gba" CACHE STRING "Private runtime directory for Cardputer Zero APPLaunch packaging")
@@ -110,7 +111,30 @@ if (CZ_GBA_BUNDLE_MGBA)
     set(ENABLE_SCRIPTING OFF CACHE BOOL "" FORCE)
     add_subdirectory("${CZ_GBA_MGBA_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/mgba-build" EXCLUDE_FROM_ALL)
 elseif (NOT TARGET mgba)
-    find_package(mgba CONFIG REQUIRED)
+    # Upstream mGBA installs its headers and library but does not guarantee a
+    # CMake package-config file on every release.  Keep the standard package
+    # lookup first, then create the same imported target from a normal prefix.
+    # This lets distribution packages (including TDVP's shared feed runtime)
+    # be consumed without bundling a second emulation core into every app.
+    find_package(mgba CONFIG QUIET)
+    if (NOT TARGET mgba)
+        find_path(CZ_GBA_MGBA_INCLUDE_DIR
+            NAMES mgba/core/core.h
+            HINTS "${CZ_GBA_MGBA_ROOT}"
+            PATH_SUFFIXES include)
+        find_library(CZ_GBA_MGBA_LIBRARY
+            NAMES mgba
+            HINTS "${CZ_GBA_MGBA_ROOT}"
+            PATH_SUFFIXES lib)
+        if (CZ_GBA_MGBA_INCLUDE_DIR AND CZ_GBA_MGBA_LIBRARY)
+            add_library(mgba SHARED IMPORTED GLOBAL)
+            set_target_properties(mgba PROPERTIES
+                IMPORTED_LOCATION "${CZ_GBA_MGBA_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${CZ_GBA_MGBA_INCLUDE_DIR}")
+        else()
+            message(FATAL_ERROR "libmgba was not found. Set CZ_GBA_MGBA_ROOT, CMAKE_PREFIX_PATH, or enable CZ_GBA_BUNDLE_MGBA.")
+        endif()
+    endif()
 endif()
 
 add_executable(cardputer-zero-gba

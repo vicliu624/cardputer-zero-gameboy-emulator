@@ -63,11 +63,11 @@ Run it manually on a compatible device with:
 cardputer-zero-gba --device-profile tdvp-k230
 ```
 
-The TDVP package maps the same keyboard and arrow-key controls as the
+The TDVP feed package is named `tdvp-gba` and maps the same keyboard and arrow-key controls as the
 Cardputer profile. Its visible F1–F5 row is also available as MENU, SAVE,
 LOAD, FAST, and CHEATS respectively. The package is built only against the
 exact `tdvp-k230-r1` SDK/sysroot and published as an ABI-gated `.ipk`; see
-`embedded-opkg-feed/packages/tdvp-cardputer-zero-gba/README.md` when both
+`embedded-opkg-feed/packages/tdvp-gba/README.md` when both
 repositories are checked out side by side.
 
 The ROM browser scans local `rom/`, local `roms/`, and the user data ROM

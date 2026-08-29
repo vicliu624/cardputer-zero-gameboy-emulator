@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+runtime_dir=/opt/tdvp-gba
+runtime="$runtime_dir/cardputer-zero-gba"
+
+if [ ! -x "$runtime" ]; then
+    echo "tdvp-gba: missing TDVP runtime: $runtime" >&2
+    exit 127
+fi
+
+# Labwc owns DRM/KMS.  The emulator is a normal Wayland client and therefore
+# never selects fbdev or KMSDRM for the application process.
+export SDL_VIDEODRIVER=wayland
+if [ -n "${HOME:-}" ] && [ -d "$HOME" ]; then
+    cd -- "$HOME"
+fi
+exec "$runtime" --device-profile tdvp-k230 "$@"

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GBA Emulator
+Comment=Game Boy Advance emulator for TDVP K230
+Exec=/usr/bin/tdvp-gba
+Icon=/usr/share/icons/hicolor/128x128/apps/tdvp-gba.png
+Terminal=false
+Categories=Game;Emulator;
+StartupNotify=false
