@@ -17,6 +17,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(CZ_GBA_FETCH_SDL2 "Fetch SDL2 if find_package cannot locate it" ON)
 set(CZ_GBA_SDL2_SOURCE_DIR "" CACHE PATH "Optional SDL2 source checkout to add_subdirectory")
+set(CZ_GBA_SDL2_ROOT "" CACHE PATH "Optional SDL2 installation prefix for a system SDL2 build")
 option(CZ_GBA_BUNDLE_SDL2 "Build bundled SDL2 from extern/SDL when a system SDL2 target is unavailable" ON)
 option(CZ_GBA_PREFER_BUNDLED_SDL2 "Build bundled SDL2 before searching the target SDK" OFF)
 option(CZ_GBA_SDL_SHARED "Build bundled SDL2 as a shared library" ON)
@@ -45,6 +46,27 @@ if (NOT CZ_GBA_PREFER_BUNDLED_SDL2)
 
     if (NOT TARGET SDL2::SDL2)
         find_package(SDL2 QUIET)
+    endif()
+endif()
+
+if (NOT TARGET SDL2::SDL2 AND CZ_GBA_SDL2_ROOT)
+    # A cross-build toolchain can deliberately restrict find_package() to the
+    # firmware sysroot.  A distribution build may still supply SDL2 from a
+    # release-local SDK prefix, so construct the standard imported target from
+    # that explicit prefix instead of falling back to extern/SDL or FetchContent.
+    find_path(CZ_GBA_SDL2_INCLUDE_DIR
+        NAMES SDL2/SDL.h
+        HINTS "${CZ_GBA_SDL2_ROOT}"
+        PATH_SUFFIXES include)
+    find_library(CZ_GBA_SDL2_LIBRARY
+        NAMES SDL2-2.0 SDL2
+        HINTS "${CZ_GBA_SDL2_ROOT}"
+        PATH_SUFFIXES lib)
+    if (CZ_GBA_SDL2_INCLUDE_DIR AND CZ_GBA_SDL2_LIBRARY)
+        add_library(SDL2::SDL2 SHARED IMPORTED GLOBAL)
+        set_target_properties(SDL2::SDL2 PROPERTIES
+            IMPORTED_LOCATION "${CZ_GBA_SDL2_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${CZ_GBA_SDL2_INCLUDE_DIR}")
     endif()
 endif()
 
