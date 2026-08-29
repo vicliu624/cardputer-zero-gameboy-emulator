@@ -57,11 +57,13 @@ if (NOT TARGET SDL2::SDL2 AND CZ_GBA_SDL2_ROOT)
     find_path(CZ_GBA_SDL2_INCLUDE_DIR
         NAMES SDL2/SDL.h
         HINTS "${CZ_GBA_SDL2_ROOT}"
-        PATH_SUFFIXES include)
+        PATH_SUFFIXES include
+        NO_CMAKE_FIND_ROOT_PATH)
     find_library(CZ_GBA_SDL2_LIBRARY
         NAMES SDL2-2.0 SDL2
         HINTS "${CZ_GBA_SDL2_ROOT}"
-        PATH_SUFFIXES lib)
+        PATH_SUFFIXES lib
+        NO_CMAKE_FIND_ROOT_PATH)
     if (CZ_GBA_SDL2_INCLUDE_DIR AND CZ_GBA_SDL2_LIBRARY)
         add_library(SDL2::SDL2 SHARED IMPORTED GLOBAL)
         set_target_properties(SDL2::SDL2 PROPERTIES
@@ -143,11 +145,13 @@ elseif (NOT TARGET mgba)
         find_path(CZ_GBA_MGBA_INCLUDE_DIR
             NAMES mgba/core/core.h
             HINTS "${CZ_GBA_MGBA_ROOT}"
-            PATH_SUFFIXES include)
+            PATH_SUFFIXES include
+            NO_CMAKE_FIND_ROOT_PATH)
         find_library(CZ_GBA_MGBA_LIBRARY
             NAMES mgba
             HINTS "${CZ_GBA_MGBA_ROOT}"
-            PATH_SUFFIXES lib)
+            PATH_SUFFIXES lib
+            NO_CMAKE_FIND_ROOT_PATH)
         if (CZ_GBA_MGBA_INCLUDE_DIR AND CZ_GBA_MGBA_LIBRARY)
             add_library(mgba SHARED IMPORTED GLOBAL)
             set_target_properties(mgba PROPERTIES
