@@ -55,9 +55,9 @@ if (NOT TARGET SDL2::SDL2 AND CZ_GBA_SDL2_ROOT)
     # release-local SDK prefix, so construct the standard imported target from
     # that explicit prefix instead of falling back to extern/SDL or FetchContent.
     find_path(CZ_GBA_SDL2_INCLUDE_DIR
-        NAMES SDL2/SDL.h
+        NAMES SDL.h
         HINTS "${CZ_GBA_SDL2_ROOT}"
-        PATH_SUFFIXES include
+        PATH_SUFFIXES include/SDL2
         NO_CMAKE_FIND_ROOT_PATH)
     find_library(CZ_GBA_SDL2_LIBRARY
         NAMES SDL2-2.0 SDL2
