@@ -153,6 +153,14 @@ int main()
     require(contains(cmake, "lib/cardputer-zero-gba"), "private libdir install path");
     require(contains(cmake, "packaging/cardputer-zero-gba-applaunch"), "APPLaunch wrapper installed");
     require(contains(cmake, "CZ_GBA_PREFER_BUNDLED_SDL2"), "K230 can prefer bundled SDL2");
+    require(contains(cmake, "CZ_GBA_TDVP_COMPOSABLE_FEED"),
+            "TDVP feed build exposes a composable-runtime mode");
+    require(contains(cmake, "CZ_GBA_SDL2_ROOT and CZ_GBA_MGBA_ROOT"),
+            "TDVP composable mode requires independent SDL2 and mGBA prefixes");
+    require(contains(cmake, "CZ_GBA_FETCH_SDL2 OFF"),
+            "TDVP composable mode disables SDL FetchContent fallback");
+    require(contains(cmake, "CZ_GBA_BUNDLE_MGBA OFF"),
+            "TDVP composable mode disables bundled mGBA");
     require(contains(cmake, "CZ_GBA_REQUIRE_K230_DRM"), "K230 package can require DRM/KMS UAPI headers");
     require(contains(cmake, "CZ_GBA_REQUIRE_K230_WAYLAND_SHM"), "K230 package requires Wayland shared-memory client ABI");
     const auto tdvp_drm = read_file(root / "src" / "platform" / "tdvp_k230_drm.cpp");

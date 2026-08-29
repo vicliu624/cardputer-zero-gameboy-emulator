@@ -29,9 +29,26 @@ option(CZ_GBA_USE_SYSTEM_MGBA "Use system libmgba instead of bundled mGBA" OFF)
 option(CZ_GBA_BUNDLE_MGBA "Build bundled mGBA from extern/mgba" ON)
 set(CZ_GBA_MGBA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/mgba" CACHE PATH "mGBA source checkout")
 set(CZ_GBA_MGBA_ROOT "" CACHE PATH "Optional libmgba installation prefix for a system mGBA build")
+option(CZ_GBA_TDVP_COMPOSABLE_FEED "Require independently packaged SDL2 and libmGBA release prefixes for TDVP feed builds" OFF)
 option(CZ_GBA_ENABLE_DEB_PACKAGE "Enable CPack Debian package generation" OFF)
 set(CZ_GBA_PACKAGE_ARCHITECTURE "" CACHE STRING "Debian package architecture override, for example arm64")
 set(CZ_GBA_PRIVATE_LIBDIR "lib/cardputer-zero-gba" CACHE STRING "Private runtime directory for Cardputer Zero APPLaunch packaging")
+
+if (CZ_GBA_TDVP_COMPOSABLE_FEED)
+    # TDVP's distribution feed has one independent IPK owner for every
+    # non-ABI runtime.  Do not fall back to FetchContent, git submodules, or
+    # the firmware sysroot in this mode: SDL2 and libmGBA must come from the
+    # release-local staging prefixes supplied by their own feed recipes.
+    if (NOT CZ_GBA_SDL2_ROOT OR NOT CZ_GBA_MGBA_ROOT)
+        message(FATAL_ERROR
+            "CZ_GBA_TDVP_COMPOSABLE_FEED requires CZ_GBA_SDL2_ROOT and CZ_GBA_MGBA_ROOT from the TDVP feed staging release")
+    endif()
+    set(CZ_GBA_FETCH_SDL2 OFF CACHE BOOL "Fetch SDL2 if find_package cannot locate it" FORCE)
+    set(CZ_GBA_BUNDLE_SDL2 OFF CACHE BOOL "Build bundled SDL2 from extern/SDL when a system SDL2 target is unavailable" FORCE)
+    set(CZ_GBA_PREFER_BUNDLED_SDL2 OFF CACHE BOOL "Build bundled SDL2 before searching the target SDK" FORCE)
+    set(CZ_GBA_USE_SYSTEM_MGBA ON CACHE BOOL "Use system libmgba instead of bundled mGBA" FORCE)
+    set(CZ_GBA_BUNDLE_MGBA OFF CACHE BOOL "Build bundled mGBA from extern/mgba" FORCE)
+endif()
 
 if (CZ_GBA_USE_SYSTEM_MGBA)
     set(CZ_GBA_BUNDLE_MGBA OFF CACHE BOOL "Build bundled mGBA from extern/mgba" FORCE)
@@ -41,7 +58,7 @@ if (CZ_GBA_BUNDLE_SDL2 AND NOT CZ_GBA_SDL2_SOURCE_DIR AND EXISTS "${CMAKE_CURREN
     set(CZ_GBA_SDL2_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/SDL" CACHE PATH "Optional SDL2 source checkout to add_subdirectory" FORCE)
 endif()
 
-if (NOT CZ_GBA_PREFER_BUNDLED_SDL2)
+if (NOT CZ_GBA_TDVP_COMPOSABLE_FEED AND NOT CZ_GBA_PREFER_BUNDLED_SDL2)
     find_package(SDL2 CONFIG QUIET)
 
     if (NOT TARGET SDL2::SDL2)
@@ -140,7 +157,9 @@ elseif (NOT TARGET mgba)
     # lookup first, then create the same imported target from a normal prefix.
     # This lets distribution packages (including TDVP's shared feed runtime)
     # be consumed without bundling a second emulation core into every app.
-    find_package(mgba CONFIG QUIET)
+    if (NOT CZ_GBA_TDVP_COMPOSABLE_FEED)
+        find_package(mgba CONFIG QUIET)
+    endif()
     if (NOT TARGET mgba)
         find_path(CZ_GBA_MGBA_INCLUDE_DIR
             NAMES mgba/core/core.h

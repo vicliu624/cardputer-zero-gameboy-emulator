@@ -74,6 +74,20 @@ link a second copy of those common runtimes. See
 `embedded-opkg-feed/packages/tdvp-gba/README.md` when both repositories are
 checked out side by side.
 
+For a TDVP feed build, configure the source explicitly as a composable leaf:
+
+```sh
+cmake -S . -B build-tdvp \
+  -DCZ_GBA_TDVP_COMPOSABLE_FEED=ON \
+  -DCZ_GBA_SDL2_ROOT=/release-staging/sdl2 \
+  -DCZ_GBA_MGBA_ROOT=/release-staging/libmgba
+```
+
+That mode rejects missing release-local prefixes and disables FetchContent,
+bundled SDL2, and bundled/static mGBA. The released application therefore has
+no private copy of a general runtime; the exact `Depends` relation in the
+matching immutable feed release is its complete non-ABI runtime contract.
+
 The ROM browser scans local `rom/`, local `roms/`, and the user data ROM
 directory:
 
