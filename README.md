@@ -21,9 +21,10 @@ For an existing checkout:
 git submodule update --init --recursive
 ```
 
-For a TDVP K230 release build from WSL, use a clean recursive clone in the WSL
-Linux filesystem rather than a Windows-mounted working tree. The feed recipe
-checks the exact source commit and refuses a dirty checkout before packaging.
+For a TDVP K230 release build, use a clean recursive clone. A Windows-mounted
+checkout is accepted by the feed tooling when its only difference is the
+normal CRLF checkout conversion; source content, staged changes, and every
+submodule commit are still locked and checked before packaging.
 
 The authoritative project specification is [docs/SPEC.md](docs/SPEC.md), with
 detailed specs under [docs/spec/](docs/spec/).
@@ -60,15 +61,18 @@ firmware-owned audio service rather than discarded after generation.
 Run it manually on a compatible device with:
 
 ```sh
-cardputer-zero-gba --device-profile tdvp-k230
+tdvp-gba --device-profile tdvp-k230
 ```
 
-The TDVP feed package is named `tdvp-gba` and maps the same keyboard and arrow-key controls as the
-Cardputer profile. Its visible F1–F5 row is also available as MENU, SAVE,
-LOAD, FAST, and CHEATS respectively. The package is built only against the
-exact `tdvp-k230-r1` SDK/sysroot and published as an ABI-gated `.ipk`; see
-`embedded-opkg-feed/packages/tdvp-gba/README.md` when both
-repositories are checked out side by side.
+The TDVP feed package is named `tdvp-gba` and maps the same keyboard and
+arrow-key controls as the Cardputer profile. Its visible F1–F5 row is also
+available as MENU, SAVE, LOAD, FAST, and CHEATS respectively. It is built only
+against the exact `tdvp-k230-r1` SDK/sysroot and published as an ABI-gated
+`.ipk`. In that feed it dynamically depends on the separately published
+`sdl2`, `sdl2-ttf`, and `libmgba` packages; it does not bundle or statically
+link a second copy of those common runtimes. See
+`embedded-opkg-feed/packages/tdvp-gba/README.md` when both repositories are
+checked out side by side.
 
 The ROM browser scans local `rom/`, local `roms/`, and the user data ROM
 directory:
