@@ -36,6 +36,10 @@ public:
     void poll_events(input::InputFrame& input);
     void present(const std::uint32_t* canvas_xrgb8888, int canvas_width, int canvas_height, int pitch_bytes);
     bool should_quit() const;
+    // Returns and clears a playback-device removal notification. SDL's audio
+    // device event is consumed on the UI thread, where reopening the sink is
+    // safe; the realtime callback never attempts a reconfiguration itself.
+    bool take_audio_device_removed();
 
 private:
     SDL_Window* window_ = nullptr;
@@ -48,6 +52,7 @@ private:
     int canvas_width_ = 320;
     int canvas_height_ = 170;
     bool should_quit_ = false;
+    bool audio_device_removed_ = false;
 };
 
 } // namespace czgba::platform

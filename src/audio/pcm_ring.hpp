@@ -9,6 +9,12 @@
 
 namespace czgba::audio {
 
+struct PcmRingWatermarks {
+    std::size_t queued_samples = 0;
+    std::size_t low_queued_samples = 0;
+    std::size_t high_queued_samples = 0;
+};
+
 // A preallocated single-producer/single-consumer PCM queue. The emulation
 // worker is the only producer and the SDL callback is the only consumer.
 // Values are interleaved signed 16-bit samples rather than byte streams so
@@ -42,7 +48,9 @@ public:
         }
 
         copy_into_ring(write, samples);
-        write_index_.store(write + samples.size(), std::memory_order_release);
+        const auto new_write = write + samples.size();
+        write_index_.store(new_write, std::memory_order_release);
+        note_watermark(static_cast<std::size_t>(new_write - read));
         return true;
     }
 
@@ -56,7 +64,9 @@ public:
         const auto write = write_index_.load(std::memory_order_acquire);
         const auto count = std::min<std::size_t>(destination.size(), write - read);
         copy_from_ring(read, destination.first(count));
-        read_index_.store(read + count, std::memory_order_release);
+        const auto new_read = read + count;
+        read_index_.store(new_read, std::memory_order_release);
+        note_watermark(static_cast<std::size_t>(write - new_read));
         return count;
     }
 
@@ -97,15 +107,51 @@ public:
         return rejected_samples_.load(std::memory_order_relaxed);
     }
 
+    PcmRingWatermarks watermarks() const
+    {
+        return {
+            queued_samples(),
+            static_cast<std::size_t>(low_queued_samples_.load(std::memory_order_relaxed)),
+            static_cast<std::size_t>(high_queued_samples_.load(std::memory_order_relaxed)),
+        };
+    }
+
+    // Begin a new observable audio epoch after prebuffering. Startup and
+    // recovery deliberately do not make an initial empty queue look like a
+    // realtime low-water event in the telemetry.
+    void reset_watermarks()
+    {
+        const auto queued = queued_samples();
+        low_queued_samples_.store(queued, std::memory_order_relaxed);
+        high_queued_samples_.store(queued, std::memory_order_relaxed);
+    }
+
     // The producer calls this only while the audio device is paused. The
     // callback therefore cannot still be reading samples that are discarded.
     void discard_all_while_paused()
     {
         const auto write = write_index_.load(std::memory_order_acquire);
         read_index_.store(write, std::memory_order_release);
+        low_queued_samples_.store(0, std::memory_order_relaxed);
+        high_queued_samples_.store(0, std::memory_order_relaxed);
     }
 
 private:
+    void note_watermark(std::size_t queued_samples)
+    {
+        auto low = low_queued_samples_.load(std::memory_order_relaxed);
+        while (queued_samples < low &&
+               !low_queued_samples_.compare_exchange_weak(
+                   low, queued_samples, std::memory_order_relaxed, std::memory_order_relaxed)) {
+        }
+
+        auto high = high_queued_samples_.load(std::memory_order_relaxed);
+        while (queued_samples > high &&
+               !high_queued_samples_.compare_exchange_weak(
+                   high, queued_samples, std::memory_order_relaxed, std::memory_order_relaxed)) {
+        }
+    }
+
     void copy_into_ring(std::uint64_t write, std::span<const std::int16_t> samples)
     {
         const auto start = static_cast<std::size_t>(write % capacity_samples());
@@ -127,6 +173,8 @@ private:
     alignas(64) std::atomic<std::uint64_t> read_index_{0};
     alignas(64) std::atomic<std::uint64_t> write_index_{0};
     std::atomic<std::uint64_t> rejected_samples_{0};
+    std::atomic<std::uint64_t> low_queued_samples_{0};
+    std::atomic<std::uint64_t> high_queued_samples_{0};
 };
 
 } // namespace czgba::audio

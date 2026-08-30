@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -47,6 +48,13 @@ struct RuntimeMetrics {
     std::uint64_t video_frames_dropped = 0;
 };
 
+struct AudioClockConfig {
+    int sample_rate = 44100;
+    bool use_audio_clock = true;
+    std::size_t target_audio_frames = 3072;
+    std::size_t start_audio_frames = 2646;
+};
+
 // Owns App and therefore the mGBA core on one worker thread. SDL/Wayland live
 // on the UI thread and cannot block this producer. PCM crosses the boundary
 // only through PcmRing; render snapshots are a bounded latest-wins timeline.
@@ -64,6 +72,11 @@ public:
     void stop();
 
     void submit_input(const input::InputFrame& input);
+    // The caller must first stop the SDL callback. The worker then discards
+    // its own old PCM epoch and applies the new rate only at its frame
+    // boundary, where mGBA is exclusively owned, before rebuilding a complete
+    // prebuffer.
+    void request_audio_reconfigure(AudioClockConfig config);
     void notify_audio_paused();
 
     bool audio_ready() const;
@@ -102,6 +115,7 @@ private:
     core::GbaInputState latest_input_{};
     std::deque<app::AppAction> pending_actions_;
     bool quit_requested_ = false;
+    std::optional<AudioClockConfig> pending_audio_clock_;
 
     mutable std::mutex snapshot_mutex_;
     std::deque<std::shared_ptr<const RenderSnapshot>> render_timeline_;

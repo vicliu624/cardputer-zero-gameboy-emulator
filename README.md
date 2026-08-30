@@ -61,6 +61,15 @@ audio callback is the sole consumer. The UI/Wayland presentation path may
 reuse the last frame when the compositor is busy, but it never blocks the PCM
 producer or becomes the audio clock.
 
+The K230 audio path is an explicit state machine, not a one-shot start flag:
+ROM start, pause/resume, underrun recovery, and SDL playback-device replacement
+all enter the same paused/prebuffering epoch before playback is resumed. Every
+second the program reports the obtained backend/rate, queue low/current/high
+watermarks, underrun/reopen counts, and callback-jitter P50/P95/P99 values.
+`--present-delay-ms 20` or `--present-delay-ms 50` deliberately stalls only
+the UI/Wayland consumer for stress testing; a healthy audio worker must retain
+`underrun=0` while video frames may be skipped.
+
 Run it manually on a compatible device with:
 
 ```sh

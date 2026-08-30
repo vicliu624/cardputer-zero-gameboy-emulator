@@ -153,16 +153,31 @@ The ring is preallocated and accepts every interleaved S16 stereo batch in
 full or rejects it with a visible metric; partial PCM writes are forbidden. SDL
 starts paused, then begins only after a complete prebuffer. The callback fills
 only a true shortage with silence and increments an underrun counter. The UI
-notices an underrun on its next iteration, pauses the callback, discards the
-old ring contents under SDL's device lock, and lets the emulation worker create
-a new complete prebuffer. It does not wait for a once-per-second telemetry
-tick to recover.
+notices an underrun on its next iteration and pauses the callback. The sole
+producer, the emulation worker, then discards the old ring epoch and creates a
+new complete prebuffer. It does not wait for a once-per-second telemetry tick
+to recover.
+
+The same state transition is used for a playback-device removal or a failed
+PulseAudio session: the UI closes/reopens SDL outside the callback, the worker
+applies the obtained sample rate only at its own frame boundary, stale PCM and
+video timestamps are discarded, and a complete prebuffer is rebuilt. If no
+sink can be reopened, the worker switches to explicit muted pacing instead of
+filling an unconsumed PCM ring; it retries at a bounded cadence until an audio
+device returns. Telemetry includes queue low/current/high watermarks, recovery
+and reopen counts, plus callback-jitter P50/P95/P99 buckets. The callback
+itself remains allocation-, logging-, lock-, and mGBA-free.
 
 Render snapshots have audio-frame presentation timestamps. The UI chooses the
 newest snapshot no later than the callback playback position plus one callback
 quantum. A late compositor drops a video submission or reuses the last frame;
 it never stalls mGBA or the PCM producer. FAST mode drains generated audio
 instead of compressing it into normal-speed playback.
+
+`--present-delay-ms <0..1000>` is a deliberate UI/presentation stress hook.
+It may be used at 20 ms and 50 ms on K230 to demonstrate that compositor delay
+causes latest-wins video loss rather than PCM underflow; it is not a normal
+runtime tuning option.
 
 ## ROM Browser Contract
 

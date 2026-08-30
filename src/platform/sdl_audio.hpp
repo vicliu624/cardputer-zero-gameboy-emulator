@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -18,12 +19,28 @@ struct SdlAudioConfig {
     int start_buffer_frames = 3072;
 };
 
+enum class SdlAudioState {
+    Closed,
+    Prebuffering,
+    Playing,
+    Unavailable,
+};
+
+const char* sdl_audio_state_name(SdlAudioState state);
+
 struct SdlAudioMetrics {
     std::uint64_t callback_count = 0;
     std::uint64_t callback_frames = 0;
     std::uint64_t underrun_frames = 0;
     std::uint64_t rejected_frames = 0;
     std::size_t queued_frames = 0;
+    std::size_t low_queued_frames = 0;
+    std::size_t high_queued_frames = 0;
+    std::uint64_t recovery_count = 0;
+    std::uint64_t reopen_count = 0;
+    std::uint32_t callback_jitter_p50_us = 0;
+    std::uint32_t callback_jitter_p95_us = 0;
+    std::uint32_t callback_jitter_p99_us = 0;
 };
 
 class SdlAudio {
@@ -36,10 +53,16 @@ public:
 
     bool init(audio::PcmRing& ring, const SdlAudioConfig& config = {});
     void shutdown();
-    void pause(bool paused);
+    // Enter a new, silent media epoch. This is used for pause, underrun
+    // recovery, and device replacement; every resume must pass through the
+    // normal complete-prebuffer gate rather than toggling a boolean back on.
+    void begin_prebuffering();
+    void recover_from_underrun();
+    bool reopen();
     bool start_if_prebuffered();
     bool active() const;
     bool playing() const;
+    SdlAudioState state() const;
     int sample_rate() const;
     int channels() const;
     int callback_buffer_frames() const;
@@ -48,11 +71,21 @@ public:
     SdlAudioMetrics metrics() const;
 
 private:
+    static constexpr std::size_t kJitterBucketWidthUs = 100;
+    static constexpr std::size_t kJitterBucketCount = 257;
+
     static void sdl_audio_callback(void* userdata, Uint8* stream, int bytes);
     void consume_audio(Uint8* stream, int bytes);
+    void reset_callback_jitter();
+    void record_callback_timing();
+    std::uint32_t callback_jitter_quantile_us(std::uint32_t permille) const;
 
     SDL_AudioDeviceID device_id_ = 0;
     audio::PcmRing* ring_ = nullptr;
+    // Retained even while a device is unavailable so the UI thread can retry
+    // PulseAudio/ALSA recovery without reconstructing the emulator process.
+    audio::PcmRing* configured_ring_ = nullptr;
+    SdlAudioConfig config_;
     int sample_rate_ = 48000;
     int channels_ = 2;
     int callback_buffer_frames_ = 0;
@@ -61,7 +94,12 @@ private:
     std::atomic<std::uint64_t> callback_count_{0};
     std::atomic<std::uint64_t> callback_frames_{0};
     std::atomic<std::uint64_t> underrun_frames_{0};
-    bool playback_started_ = false;
+    std::atomic<std::uint64_t> recovery_count_{0};
+    std::atomic<std::uint64_t> reopen_count_{0};
+    std::atomic<std::int64_t> last_callback_time_us_{0};
+    std::array<std::atomic<std::uint64_t>, kJitterBucketCount> callback_jitter_buckets_{};
+    std::int64_t expected_callback_period_us_ = 0;
+    SdlAudioState state_ = SdlAudioState::Closed;
     bool initialized_ = false;
 };
 

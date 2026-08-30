@@ -14,7 +14,8 @@ namespace {
 bool requires_value(std::string_view arg)
 {
     return arg == "--scale" || arg == "--frames" || arg == "--rom" || arg == "--config" ||
-           arg == "--theme" || arg == "--log-level" || arg == "--device-profile";
+           arg == "--theme" || arg == "--log-level" || arg == "--device-profile" ||
+           arg == "--present-delay-ms";
 }
 
 bool is_valid_log_level(std::string_view value)
@@ -62,6 +63,14 @@ bool parse_cli(int argc, char** argv, CliOptions& options, std::string& error)
                     return false;
                 }
                 options.max_frames = static_cast<int>(parsed);
+            } else if (arg == "--present-delay-ms") {
+                char* end = nullptr;
+                const long parsed = std::strtol(value.c_str(), &end, 10);
+                if (end == value.c_str() || *end != '\0' || parsed < 0 || parsed > 1000) {
+                    error = "--present-delay-ms must be an integer from 0 to 1000";
+                    return false;
+                }
+                options.present_delay_ms = static_cast<int>(parsed);
             } else if (arg == "--device-profile") {
                 if (value != "cardputer-zero" && value != "tdvp-k230") {
                     error = "--device-profile must be cardputer-zero or tdvp-k230";
@@ -99,6 +108,7 @@ void print_help(const char* executable_name)
         << "  --version                      Show app version\n"
         << "  --scale 1                      Compatibility option; window is always 320x170\n"
         << "  --frames <n>                   Run n presented frames, then exit\n"
+        << "  --present-delay-ms <0..1000>  Inject display-thread delay for audio stress testing\n"
         << "  --fullscreen                   Use a fullscreen SDL window\n"
         << "  --kiosk                        Use a borderless fixed 320x170 presentation surface\n"
         << "  --device-profile <name>        cardputer-zero (default) or tdvp-k230\n"

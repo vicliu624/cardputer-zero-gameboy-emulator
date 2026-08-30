@@ -100,9 +100,16 @@ Required behavior:
   on TDVP this is 60 ms, maintained toward an 80 ms target in a 160 ms ring.
   A normal K230 callback quantum is 512 frames.
 - An underrun is handled on the next UI iteration: pause and lock the SDL
-  device, clear the ring, reset the A/V media epoch, then resume only after a
+  device, then notify the emulation worker. That sole ring producer clears its
+  own queue and resets the A/V media epoch before playback resumes after a
   fresh prebuffer. This deliberate recovery happens outside the callback and
   prevents a brief scheduling stall becoming a periodic dropout train.
+- Pause/resume, SDL playback-device removal, and a PulseAudio reconnect use
+  the same state machine. SDL is closed and opened only by the UI thread; the
+  emulation worker applies the newly obtained sample rate at a frame boundary,
+  clears old PCM/video PTS, then produces a new prebuffer. If reopening fails,
+  emulation moves to explicit muted pacing and retries at a bounded interval
+  instead of filling an unconsumed ring.
 - Render snapshots are deep copies tagged with the PCM frame position at which
   their emulation finished. Presentation selects the newest snapshot at or
   before callback playback plus one callback quantum. Late Wayland buffers are
@@ -122,6 +129,14 @@ channels: 2
 `MgbaCore::read_audio_samples(sample_rate, max_frames)` must reconfigure mGBA's
 blip rates when the obtained SDL sample rate differs from the current mGBA audio
 rate, even if no pending samples are available on that exact call.
+
+Telemetry is sampled by the ordinary UI thread once a second. It records the
+selected SDL driver and obtained rate, PCM queue low/current/high watermarks,
+underrun/rejected/recovery/reopen counters, and callback schedule-jitter
+P50/P95/P99. A callback only writes its timestamp histogram atomically; it
+does not print or perform a backend operation. `--present-delay-ms 20` and
+`--present-delay-ms 50` are release-test stress injections that stall only the
+video consumer. They must preserve `underrun=0`; skipped video is expected.
 
 ## Timing
 

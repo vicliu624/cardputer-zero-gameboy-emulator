@@ -4,6 +4,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 
 #include "render/layout.hpp"
 
@@ -178,6 +179,9 @@ void SdlPlatform::poll_events(input::InputFrame& input)
             const bool pressed = event.type == SDL_KEYDOWN;
             input_mapper_.handle_key(event.key.keysym.sym, pressed, input);
         }
+        if (event.type == SDL_AUDIODEVICEREMOVED && event.adevice.iscapture == 0) {
+            audio_device_removed_ = true;
+        }
     }
 }
 
@@ -222,6 +226,11 @@ void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
 bool SdlPlatform::should_quit() const
 {
     return should_quit_;
+}
+
+bool SdlPlatform::take_audio_device_removed()
+{
+    return std::exchange(audio_device_removed_, false);
 }
 
 } // namespace czgba::platform

@@ -84,18 +84,23 @@ int main()
     require(contains(sdl_audio, "underrun_frames_"), "callback counts underflow rather than silently losing it");
     require(contains(sdl_audio, "SDL_GetCurrentAudioDriver"), "audio startup reports the selected runtime driver");
     require(contains(sdl_audio, "start_buffer_frames_"), "audio prebuffer");
-    require(contains(sdl_audio, "playback_started_"), "audio playback start state");
+    require(contains(sdl_audio, "SdlAudioState::Prebuffering"), "audio uses an explicit prebuffer state");
+    require(contains(sdl_audio, "recover_from_underrun"), "underrun enters a complete recovery epoch");
+    require(contains(sdl_audio, "bool SdlAudio::reopen()"), "audio device replacement recreates the sink");
+    require(contains(sdl_audio, "callback_jitter_quantile_us"), "callback jitter is observable outside realtime logging");
     require(!contains(sdl_audio, "SDL_QueueAudio"), "legacy short-write queue path removed");
 
     const auto pcm_ring = read_file(root / "src" / "audio" / "pcm_ring.hpp");
     require(contains(pcm_ring, "single-producer/single-consumer"), "PCM ring declares its ownership model");
     require(contains(pcm_ring, "write_all"), "PCM ring rejects a batch instead of partially writing it");
+    require(contains(pcm_ring, "PcmRingWatermarks"), "PCM ring exposes low and high water marks");
 
     const auto emulation_runtime = read_file(root / "src" / "emulation" / "emulation_runtime.cpp");
     require(contains(emulation_runtime, "std::jthread"), "mGBA runs on an isolated emulation worker");
     require(contains(emulation_runtime, "pcm_ring_.queued_frames()"), "emulation pacing uses the audio water level");
     require(contains(emulation_runtime, "render_timeline_"), "video is a bounded latest-wins timeline");
     require(contains(emulation_runtime, "take_snapshot_for_audio"), "video presentation follows the audio clock");
+    require(contains(emulation_runtime, "request_audio_reconfigure"), "device replacement resets mGBA at a worker frame boundary");
 
     const auto mgba_core = read_file(root / "src" / "core" / "mgba_core.cpp");
     require(contains(mgba_core, "core_->reset(core_);\n    configure_audio(audio_sample_rate_);"), "audio configured after reset");
@@ -132,6 +137,7 @@ int main()
     require(contains(sdl_platform, "PresentationProfile::TdvpK230"), "TDVP presentation profile");
     require(contains(sdl_platform, "tdvp_direct_drm_requested"), "TDVP direct DRM is opt-in only");
     require(contains(sdl_platform, "TdvpK230WaylandShm"), "TDVP defaults to direct wl_shm presentation");
+    require(contains(sdl_platform, "SDL_AUDIODEVICEREMOVED"), "SDL device removal is passed to the recovery controller");
     require(contains(sdl_platform, "refusing software GLES fallback"), "TDVP refuses software GLES fallback");
     require(!contains(sdl_platform, "SDL_RENDERER_PRESENTVSYNC"), "renderer vsync removed");
     require(contains(tdvp_shm, "wl_shm_create_pool"), "TDVP creates direct Wayland shared-memory pools");

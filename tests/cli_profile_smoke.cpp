@@ -39,6 +39,17 @@ int main()
             "TDVP K230 profile parses");
     require(k230.device_profile == "tdvp-k230", "TDVP K230 profile is selected");
 
+    czgba::util::CliOptions stress;
+    require(parse({"cardputer-zero-gba", "--present-delay-ms", "50"}, stress, error),
+            "presentation-delay stress option parses");
+    require(stress.present_delay_ms == 50, "presentation-delay value is preserved");
+
+    czgba::util::CliOptions invalid_delay;
+    require(!parse({"cardputer-zero-gba", "--present-delay-ms", "1001"}, invalid_delay, error),
+            "out-of-range presentation delay is rejected");
+    require(error.find("--present-delay-ms") != std::string::npos,
+            "presentation-delay rejection names the option");
+
     czgba::util::CliOptions invalid;
     require(!parse({"cardputer-zero-gba", "--device-profile", "unknown"}, invalid, error),
             "unknown profile is rejected");

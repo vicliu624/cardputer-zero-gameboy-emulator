@@ -68,8 +68,30 @@ void EmulationRuntime::submit_input(const input::InputFrame& input)
     wake_.notify_all();
 }
 
+void EmulationRuntime::request_audio_reconfigure(AudioClockConfig config)
+{
+    config.sample_rate = std::max(8000, config.sample_rate);
+    config.target_audio_frames = std::max<std::size_t>(1, std::min(
+        config.target_audio_frames,
+        pcm_ring_.capacity_frames()));
+    config.start_audio_frames = std::max<std::size_t>(1, std::min(
+        config.start_audio_frames,
+        config.target_audio_frames));
+    {
+        std::lock_guard lock(input_mutex_);
+        pending_audio_clock_ = config;
+    }
+    // The UI may inspect this immediately after stopping SDL. Clearing the
+    // ready bit before the worker wakes prevents a stale prebuffer from being
+    // resumed in the small interval before the worker discards its old epoch.
+    set_audio_ready(false);
+    audio_reset_requested_.store(true, std::memory_order_release);
+    wake_.notify_all();
+}
+
 void EmulationRuntime::notify_audio_paused()
 {
+    set_audio_ready(false);
     audio_reset_requested_.store(true, std::memory_order_release);
     wake_.notify_all();
 }
@@ -162,10 +184,22 @@ void EmulationRuntime::run(std::stop_token stop_token)
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_tick);
         previous_tick = now;
 
-        if (audio_reset_requested_.exchange(false, std::memory_order_acq_rel)) {
+        std::optional<AudioClockConfig> requested_audio_clock;
+        {
+            std::lock_guard lock(input_mutex_);
+            requested_audio_clock = std::move(pending_audio_clock_);
+            pending_audio_clock_.reset();
+        }
+        if (audio_reset_requested_.exchange(false, std::memory_order_acq_rel) || requested_audio_clock.has_value()) {
             // The UI thread has already paused and locked the SDL callback.
             // It is now safe for the sole producer to discard stale PCM.
             pcm_ring_.discard_all_while_paused();
+            if (requested_audio_clock) {
+                config_.sample_rate = requested_audio_clock->sample_rate;
+                config_.use_audio_clock = requested_audio_clock->use_audio_clock;
+                config_.target_audio_frames = requested_audio_clock->target_audio_frames;
+                config_.start_audio_frames = requested_audio_clock->start_audio_frames;
+            }
             // Both endpoints are paused at this point. Restart the media
             // timeline at zero so the next SDL callback and newly published
             // video snapshots share one explicit epoch.

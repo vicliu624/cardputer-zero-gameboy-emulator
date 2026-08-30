@@ -12,6 +12,7 @@ struct CliOptions {
     bool no_audio = false;
     int scale = 1;
     int max_frames = 0;
+    int present_delay_ms = 0;
     std::string device_profile = "cardputer-zero";
     std::string rom_path;
     std::string config_path;

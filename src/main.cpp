@@ -122,14 +122,23 @@ int main(int argc, char** argv)
     }
 
     const int runtime_sample_rate = audio_ok ? audio.sample_rate() : preferred_sample_rate;
+    const auto make_audio_clock_config = [&](int sample_rate, bool use_audio_clock) {
+        czgba::emulation::AudioClockConfig config;
+        config.sample_rate = sample_rate;
+        config.use_audio_clock = use_audio_clock;
+        config.target_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(sample_rate, kAudioTargetMilliseconds));
+        config.start_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(sample_rate, kAudioStartMilliseconds));
+        return config;
+    };
+    const auto initial_audio_clock = make_audio_clock_config(runtime_sample_rate, audio_ok);
     czgba::emulation::RuntimeConfig runtime_config;
     runtime_config.working_directory = current_working_directory();
     runtime_config.rom_path = options.rom_path;
     runtime_config.log_level = mgba_log_level_from_cli(options.log_level);
     runtime_config.sample_rate = runtime_sample_rate;
-    runtime_config.use_audio_clock = audio_ok;
-    runtime_config.target_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(runtime_sample_rate, kAudioTargetMilliseconds));
-    runtime_config.start_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(runtime_sample_rate, kAudioStartMilliseconds));
+    runtime_config.use_audio_clock = initial_audio_clock.use_audio_clock;
+    runtime_config.target_audio_frames = initial_audio_clock.target_audio_frames;
+    runtime_config.start_audio_frames = initial_audio_clock.start_audio_frames;
     runtime_config.max_audio_read_frames = 4096;
     const auto core_log_level = runtime_config.log_level;
     czgba::emulation::EmulationRuntime runtime(
@@ -147,12 +156,41 @@ int main(int argc, char** argv)
         std::chrono::duration<double>(1.0 / kPresentationFramesPerSecond));
     auto next_presentation = clock::now();
     auto next_telemetry = next_presentation + std::chrono::seconds(1);
+    auto next_audio_retry = next_presentation;
     std::uint64_t observed_underruns = 0;
     int presented_frames = 0;
 
     while (!platform.should_quit()) {
         platform.poll_events(input);
         runtime.submit_input(input);
+
+        const auto loop_now = clock::now();
+        if (!options.no_audio && platform.take_audio_device_removed()) {
+            std::cerr << "SDL playback device removed; rebuilding the audio sink\n";
+            if (audio.reopen()) {
+                observed_underruns = 0;
+                runtime.request_audio_reconfigure(make_audio_clock_config(audio.sample_rate(), true));
+            } else {
+                runtime.request_audio_reconfigure(make_audio_clock_config(preferred_sample_rate, false));
+                next_audio_retry = loop_now + std::chrono::seconds(2);
+            }
+        }
+
+        // A PulseAudio restart does not reliably produce an SDL removal event
+        // on every backend. Retry an unavailable device at a bounded cadence;
+        // while unavailable, keep mGBA running in its explicit muted mode
+        // rather than filling a PCM ring that no callback can consume.
+        if (!options.no_audio && !audio.active() && loop_now >= next_audio_retry) {
+            if (audio.reopen()) {
+                std::cerr << "SDL audio sink recovered: " << audio.driver_name()
+                          << " at " << audio.sample_rate() << " Hz\n";
+                observed_underruns = 0;
+                runtime.request_audio_reconfigure(make_audio_clock_config(audio.sample_rate(), true));
+            } else {
+                runtime.request_audio_reconfigure(make_audio_clock_config(preferred_sample_rate, false));
+            }
+            next_audio_retry = loop_now + std::chrono::seconds(2);
+        }
 
         czgba::platform::SdlAudioMetrics audio_metrics;
         if (audio.active()) {
@@ -162,7 +200,7 @@ int main(int argc, char** argv)
                 // periodic telemetry. The callback has already inserted
                 // silence; pausing now prevents a repeated underrun burst.
                 std::cerr << "AUDIO underrun detected; pausing and rebuilding the PCM prebuffer\n";
-                audio.pause(true);
+                audio.recover_from_underrun();
                 runtime.notify_audio_paused();
                 audio_metrics = audio.metrics();
             }
@@ -173,7 +211,7 @@ int main(int argc, char** argv)
             } else if (audio.playing()) {
                 // SDL_PauseAudioDevice stops the callback before PcmRing is
                 // cleared, so resume always starts from a complete prebuffer.
-                audio.pause(true);
+                audio.begin_prebuffering();
                 runtime.notify_audio_paused();
             }
         }
@@ -190,6 +228,12 @@ int main(int argc, char** argv)
 
         if (displayed_snapshot) {
             renderer.draw(displayed_snapshot->state);
+            if (options.present_delay_ms != 0) {
+                // Test-only synthetic compositor/UI pressure. The emulation
+                // worker must still keep PCM above the low water level while
+                // this thread is deliberately late.
+                std::this_thread::sleep_for(std::chrono::milliseconds(options.present_delay_ms));
+            }
             platform.present(
                 renderer.canvas().data(),
                 renderer.canvas().width(),
@@ -203,11 +247,19 @@ int main(int argc, char** argv)
             audio_metrics = audio.metrics();
             const auto runtime_metrics = runtime.metrics();
             std::cout << "AUDIO telemetry: driver=" << audio.driver_name()
+                      << " state=" << czgba::platform::sdl_audio_state_name(audio.state())
                       << " rate=" << audio.sample_rate()
                       << " callback=" << audio.callback_buffer_frames()
                       << " queued=" << audio_metrics.queued_frames
+                      << " low=" << audio_metrics.low_queued_frames
+                      << " high=" << audio_metrics.high_queued_frames
                       << " underrun=" << audio_metrics.underrun_frames
                       << " rejected=" << audio_metrics.rejected_frames
+                      << " recoveries=" << audio_metrics.recovery_count
+                      << " reopens=" << audio_metrics.reopen_count
+                      << " jitter-us(p50/p95/p99)=" << audio_metrics.callback_jitter_p50_us
+                      << '/' << audio_metrics.callback_jitter_p95_us
+                      << '/' << audio_metrics.callback_jitter_p99_us
                       << " emulated=" << runtime_metrics.emulated_frames
                       << " video-drop=" << runtime_metrics.video_frames_dropped << '\n';
 

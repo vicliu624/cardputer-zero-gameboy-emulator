@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <utility>
 
 #include "audio/pcm_ring.hpp"
 #include "emulation/emulation_runtime.hpp"
@@ -15,6 +17,11 @@ namespace {
 
 class FakeCore final : public czgba::core::GbaCore {
 public:
+    explicit FakeCore(std::shared_ptr<std::atomic<int>> observed_sample_rate)
+        : observed_sample_rate_(std::move(observed_sample_rate))
+    {
+    }
+
     bool load_rom(const std::string&) override
     {
         loaded_ = true;
@@ -40,6 +47,7 @@ public:
 
     czgba::audio::AudioSampleBatch read_audio_samples(int sample_rate, int max_frames) override
     {
+        observed_sample_rate_->store(sample_rate, std::memory_order_relaxed);
         const int frames = std::min(pending_frames_, max_frames);
         pending_frames_ -= frames;
         czgba::audio::AudioSampleBatch batch;
@@ -67,6 +75,7 @@ private:
     bool loaded_ = false;
     int pending_frames_ = 0;
     int sample_cursor_ = 0;
+    std::shared_ptr<std::atomic<int>> observed_sample_rate_;
 };
 
 void require(bool condition, const char* message)
@@ -101,11 +110,12 @@ int main()
     config.target_audio_frames = 1000;
     config.start_audio_frames = 500;
     config.max_audio_read_frames = 512;
+    auto observed_sample_rate = std::make_shared<std::atomic<int>>(0);
 
     czgba::emulation::EmulationRuntime runtime(
         config,
         ring,
-        [] { return std::make_unique<FakeCore>(); });
+        [observed_sample_rate] { return std::make_unique<FakeCore>(observed_sample_rate); });
     runtime.start();
 
     require(wait_until([&] { return runtime.audio_ready(); }, std::chrono::milliseconds(1000)),
@@ -125,6 +135,18 @@ int main()
     require(runtime.take_latest_snapshot() != nullptr, "runtime publishes a render snapshot without sharing the core");
     require(runtime.take_snapshot_for_audio(0, 512) != nullptr,
             "audio-clocked presentation has a bounded initial snapshot");
+
+    // Mirror an SDL device replacement: the callback has already been
+    // paused/locked, then the worker (the only producer) discards its old
+    // PCM before changing mGBA's rate and prebuffering a new media epoch.
+    runtime.request_audio_reconfigure({48000, true, 1200, 600});
+    require(wait_until([&] {
+                return observed_sample_rate->load(std::memory_order_relaxed) == 48000 &&
+                    ring.queued_frames() >= 600;
+            }, std::chrono::milliseconds(1000)),
+            "worker applies a replacement device rate and rebuilds its prebuffer");
+    require(runtime.metrics().audio_write_failures == 0,
+            "sample-rate reconfiguration preserves whole PCM batches");
 
     runtime.stop();
     return 0;
