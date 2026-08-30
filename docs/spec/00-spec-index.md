@@ -73,7 +73,8 @@ Traceability:
    the dedicated layout in `10-tdvp-k230-large-screen-ui.md`.
 7. If shortcut docs conflict with the current input contract, use
    `04-input-storage-config.md` and `InputMapper`'s `4/5/6/7/8` mapping.
-8. If audio notes conflict with the current SDL queued-audio playback contract,
+8. If audio notes conflict with the current SDL callback / SPSC PCM-ring
+   playback contract,
    use `05-core-audio-timing.md`.
 9. If a K230 packaging or DRM/KMS presentation convenience conflicts with the
    TDVP ABI boundary, use `08-tdvp-k230.md`; use

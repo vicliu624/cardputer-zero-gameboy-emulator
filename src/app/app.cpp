@@ -28,7 +28,7 @@ void App::tick(std::chrono::milliseconds elapsed)
     toast_.update(elapsed);
 }
 
-void App::update(const input::InputFrame& input)
+void App::update(const input::InputFrame& input, bool advance_emulation)
 {
     if (input.quit_requested) {
         should_quit_ = true;
@@ -40,9 +40,11 @@ void App::update(const input::InputFrame& input)
 
     if (mode_ == AppMode::Playing) {
         core_->set_input(input.gba);
-        const int frames = fast_forward_ ? 2 : 1;
-        for (int i = 0; i < frames; ++i) {
-            core_->run_until_next_frame();
+        if (advance_emulation) {
+            const int frames = fast_forward_ ? 2 : 1;
+            for (int i = 0; i < frames; ++i) {
+                core_->run_until_next_frame();
+            }
         }
     }
 }

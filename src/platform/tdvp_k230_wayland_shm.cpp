@@ -267,20 +267,15 @@ void scale_game_pixels(
 
 State::Buffer* next_available_buffer(State& state)
 {
+    // SDL_PollEvent owns the normal Wayland event dispatch on this connection.
+    // Process events that are already queued, then present only when a wl_shm
+    // buffer is immediately reusable. Waiting here couples compositor back
+    // pressure to the UI thread; even though emulation is now independent,
+    // dropping this display submission is the correct latest-frame policy.
     wl_display_dispatch_pending(state.display);
     for (auto& buffer : state.buffers) {
         if (!buffer.busy) {
             return &buffer;
-        }
-    }
-
-    // Back-pressure from the compositor is preferable to overwriting a buffer
-    // that labwc is still scanning out.
-    while (wl_display_dispatch(state.display) >= 0) {
-        for (auto& buffer : state.buffers) {
-            if (!buffer.busy) {
-                return &buffer;
-            }
         }
     }
     return nullptr;
@@ -394,7 +389,8 @@ void TdvpK230WaylandShm::present(
 
     State::Buffer* buffer = next_available_buffer(state);
     if (buffer == nullptr) {
-        std::cerr << "TDVP K230 wl_shm: compositor connection closed\n";
+        // The compositor is still scanning every application-owned buffer.
+        // Reuse the last presented frame instead of blocking the caller.
         return;
     }
     if (buffer->static_generation != state.static_generation) {

@@ -72,45 +72,50 @@ Renderer code must not depend on mGBA native pixel formats.
 
 ## Audio Requirements
 
-The active SDL audio path uses SDL's queued-audio device. This is the current
-stable contract after the callback ring-buffer experiment produced audible
-underruns on the target device:
+The audio callback is the master clock. There are exactly three realtime
+ownership domains:
 
 ```text
-libmgba audio samples
-  -> MgbaCore
-  -> SdlAudio::write
-  -> SDL_QueueAudio
-  -> SDL audio device
-  -> system audio backend
+emulation worker (sole mGBA owner / PCM producer)
+    -> PcmRing (preallocated SPSC, whole stereo batches only)
+SDL audio callback (sole PCM consumer)
+    -> PulseAudio primary sink, ALSA dynamic fallback
+UI / Wayland thread (input and best-effort video consumer)
 ```
 
 Required behavior:
 
-- The main loop reads pending samples from `MgbaCore` once per frame and writes
-  them into `SdlAudio`.
-- `SdlAudio` opens the SDL output device with `desired.callback = nullptr` and
-  writes samples with `SDL_QueueAudio`.
-- `SdlAudio` uses `SDL_GetQueuedAudioSize` to cap queued samples and prevent
-  unbounded latency.
-- Playback starts only after a small prebuffer threshold.
-- The active playback path must not pause/restart the audio device as an
-  underrun recovery strategy.
-- When the queue is full, `SdlAudio` skips new overflow samples instead of
-  clearing the existing queue, keeping playback continuous and bounded.
-- `SDL_ClearQueuedAudio` is allowed during shutdown and explicit pause only, not
-  during steady playback.
-
-FAST mode advances more than one emulated frame per main-loop tick. It must not
-feed every generated sample into the same wall-clock interval. The current app
-layer drains generated FAST audio from mGBA and does not queue it to SDL,
-prioritizing stable normal-speed audio over compressed FAST playback.
+- `App`, `MgbaCore`, mGBA video state, and mGBA audio state are touched only by
+  the emulation worker. SDL callbacks never call mGBA and Wayland never waits
+  for the worker.
+- The worker advances mGBA only while the PCM ring is below its target water
+  level. It writes an interleaved S16 batch atomically: the full batch enters
+  the ring or none does. A rejected write increments a metric and is a bug to
+  investigate, never a hidden truncation policy.
+- `SdlAudio` supplies `desired.callback` and receives PCM only in that callback.
+  The callback performs no allocation, logging, lock acquisition, mGBA call,
+  or backend reconfiguration. If data is short it writes silence for only the
+  missing tail and increments its underrun frame counter.
+- SDL starts paused. Normal playback begins only after a complete prebuffer;
+  on TDVP this is 60 ms, maintained toward an 80 ms target in a 160 ms ring.
+  A normal K230 callback quantum is 512 frames.
+- An underrun is handled on the next UI iteration: pause and lock the SDL
+  device, clear the ring, reset the A/V media epoch, then resume only after a
+  fresh prebuffer. This deliberate recovery happens outside the callback and
+  prevents a brief scheduling stall becoming a periodic dropout train.
+- Render snapshots are deep copies tagged with the PCM frame position at which
+  their emulation finished. Presentation selects the newest snapshot at or
+  before callback playback plus one callback quantum. Late Wayland buffers are
+  dropped/latest-wins rather than blocking audio production.
+- FAST mode advances more than one emulated frame per worker turn but drains
+  generated audio rather than sending compressed audio to normal-speed output.
 
 Current audio format:
 
 ```text
-sample rate: 48000 Hz preferred, obtained SDL frequency accepted
-format: S16
+TDVP K230 preferred sample rate: 44100 Hz (matches the active hardware sink)
+other profiles preferred sample rate: 48000 Hz
+format: S16 native-endian
 channels: 2
 ```
 
@@ -131,8 +136,8 @@ Implementation rules:
 1. The core is advanced at native GBA frame cadence, not hard-locked to
    60.000 FPS.
 2. Audio synchronization takes priority over synthetic FPS display.
-3. The SDL renderer must not request `SDL_RENDERER_PRESENTVSYNC`; the main loop
-   owns pacing at native GBA cadence.
+3. The SDL renderer must not request `SDL_RENDERER_PRESENTVSYNC`; rendering is
+   paced from the audio presentation timestamp rather than governing emulation.
 4. If rendering occasionally runs late, it is better to skip or simplify video
    presentation than to let audio underrun continuously.
 5. FAST mode is an explicit user action and should display a ratio such as `2X`

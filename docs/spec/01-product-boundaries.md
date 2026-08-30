@@ -85,7 +85,7 @@ The project owns:
 - settings menu;
 - cheat menu;
 - input mapping;
-- SDL queued-audio output;
+- SDL callback audio output backed by the PCM SPSC ring;
 - SRAM path management;
 - save-state path management;
 - cheat file loading and enable/disable state;

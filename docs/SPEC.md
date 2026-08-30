@@ -138,25 +138,31 @@ F1 / F2 / F3 / F4 / F5 -> MENU / SAVE / LOAD / FAST / CHEATS
 
 ## Audio Contract
 
-The active SDL audio path uses SDL's queued-audio device. This is a deliberate
-rollback from the callback ring-buffer experiment because the device showed
-audible underruns on the Cardputer Zero target:
+Audio is the realtime master clock. mGBA and `App` are owned by one emulation
+worker; the SDL/Wayland event loop is a separate presentation consumer:
 
 ```text
 libmgba audio samples
-  -> MgbaCore
-  -> SdlAudio::write
-  -> SDL_QueueAudio
-  -> SDL audio device
+  -> MgbaCore / emulation worker
+  -> whole-batch PcmRing write (SPSC)
+  -> SDL audio callback
+  -> PulseAudio (primary) / ALSA (runtime fallback)
 ```
 
-The main loop continues to read pending samples from `MgbaCore` once per frame
-and writes them into `SdlAudio`. `SdlAudio` must prebuffer briefly before
-starting playback and must cap the queued audio length so the game never builds
-unbounded audio latency. Audio synchronization takes priority over displaying a
-synthetic FPS number. FAST mode must not feed twice as much audio into the same
-wall-clock interval; in the current implementation generated FAST audio is
-drained from mGBA but not queued to the device.
+The ring is preallocated and accepts every interleaved S16 stereo batch in
+full or rejects it with a visible metric; partial PCM writes are forbidden. SDL
+starts paused, then begins only after a complete prebuffer. The callback fills
+only a true shortage with silence and increments an underrun counter. The UI
+notices an underrun on its next iteration, pauses the callback, discards the
+old ring contents under SDL's device lock, and lets the emulation worker create
+a new complete prebuffer. It does not wait for a once-per-second telemetry
+tick to recover.
+
+Render snapshots have audio-frame presentation timestamps. The UI chooses the
+newest snapshot no later than the callback playback position plus one callback
+quantum. A late compositor drops a video submission or reuses the last frame;
+it never stalls mGBA or the PCM producer. FAST mode drains generated audio
+instead of compressing it into normal-speed playback.
 
 ## ROM Browser Contract
 

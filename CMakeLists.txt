@@ -10,6 +10,7 @@ project(cardputer-zero-gba
 
 include(GNUInstallDirs)
 include(CTest)
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -190,6 +191,7 @@ add_executable(cardputer-zero-gba
     src/cheat/cheat_manager.cpp
     src/cheat/cheat_parser.cpp
     src/config/app_config.cpp
+    src/emulation/emulation_runtime.cpp
     src/platform/sdl_platform.cpp
     src/platform/sdl_audio.cpp
     src/platform/tdvp_k230_drm.cpp
@@ -216,6 +218,22 @@ add_executable(cardputer-zero-gba-packaging-smoke
 add_executable(cardputer-zero-gba-audio-core-smoke
     tests/audio_core_smoke.cpp
     src/core/mgba_core.cpp
+    src/storage/rom_scanner.cpp
+)
+
+add_executable(cardputer-zero-gba-pcm-ring-smoke
+    tests/pcm_ring_smoke.cpp
+)
+
+add_executable(cardputer-zero-gba-emulation-runtime-smoke
+    tests/emulation_runtime_smoke.cpp
+    src/emulation/emulation_runtime.cpp
+    src/app/app.cpp
+    src/app/command_bar.cpp
+    src/app/toast.cpp
+    src/cheat/cheat_manager.cpp
+    src/cheat/cheat_parser.cpp
+    src/storage/paths.cpp
     src/storage/rom_scanner.cpp
 )
 
@@ -249,6 +267,8 @@ add_executable(cardputer-zero-gba-cli-profile-smoke
 
 target_compile_features(cardputer-zero-gba-packaging-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-audio-core-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-pcm-ring-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-emulation-runtime-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-app-menu-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-presentation-profile-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-renderer-layout-smoke PRIVATE cxx_std_20)
@@ -259,6 +279,10 @@ if (BUILD_TESTING)
              COMMAND cardputer-zero-gba-packaging-smoke)
     add_test(NAME cardputer-zero-gba-audio-core-smoke
              COMMAND cardputer-zero-gba-audio-core-smoke)
+    add_test(NAME cardputer-zero-gba-pcm-ring-smoke
+             COMMAND cardputer-zero-gba-pcm-ring-smoke)
+    add_test(NAME cardputer-zero-gba-emulation-runtime-smoke
+             COMMAND cardputer-zero-gba-emulation-runtime-smoke)
     add_test(NAME cardputer-zero-gba-app-menu-smoke
              COMMAND cardputer-zero-gba-app-menu-smoke)
     add_test(NAME cardputer-zero-gba-presentation-profile-smoke
@@ -323,6 +347,16 @@ target_include_directories(cardputer-zero-gba-audio-core-smoke
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
+target_include_directories(cardputer-zero-gba-pcm-ring-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_include_directories(cardputer-zero-gba-emulation-runtime-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
 target_include_directories(cardputer-zero-gba-app-menu-smoke
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -355,6 +389,12 @@ target_compile_definitions(cardputer-zero-gba-audio-core-smoke
         _CRT_SECURE_NO_WARNINGS
 )
 
+target_compile_definitions(cardputer-zero-gba-emulation-runtime-smoke
+    PRIVATE
+        NOMINMAX
+        _CRT_SECURE_NO_WARNINGS
+)
+
 target_compile_definitions(cardputer-zero-gba
     PRIVATE
         CARDPUTER_ZERO_GBA_VERSION="${PROJECT_VERSION}"
@@ -383,6 +423,17 @@ target_link_libraries(cardputer-zero-gba
     PRIVATE
         SDL2::SDL2
         mgba
+        Threads::Threads
+)
+
+target_link_libraries(cardputer-zero-gba-pcm-ring-smoke
+    PRIVATE
+        Threads::Threads
+)
+
+target_link_libraries(cardputer-zero-gba-emulation-runtime-smoke
+    PRIVATE
+        Threads::Threads
 )
 
 target_link_libraries(cardputer-zero-gba-audio-core-smoke

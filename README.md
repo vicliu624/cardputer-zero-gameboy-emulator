@@ -55,8 +55,11 @@ on the landscape output. Labwc retains DRM/KMS CRTC ownership and the panel
 transform; SDL supplies the Wayland window and input only. The K230 profile
 does not use SDL_Renderer, EGL, OpenGL ES, fbdev, or direct modesetting.
 Audio uses SDL's PulseAudio backend on the TDVP desktop, with ALSA compiled as
-a dynamic fallback; mGBA's queued sample stream is therefore delivered to the
-firmware-owned audio service rather than discarded after generation.
+a dynamic fallback. An emulation worker owns mGBA and writes whole S16 stereo
+batches into a preallocated single-producer/single-consumer PCM ring; SDL's
+audio callback is the sole consumer. The UI/Wayland presentation path may
+reuse the last frame when the compositor is busy, but it never blocks the PCM
+producer or becomes the audio clock.
 
 Run it manually on a compatible device with:
 

@@ -79,15 +79,23 @@ int main()
             "new TDVP desktop uses its package-owned absolute icon path");
 
     const auto sdl_audio = read_file(root / "src" / "platform" / "sdl_audio.cpp");
-    require(contains(sdl_audio, "desired.callback = nullptr"), "queued audio device");
-    require(contains(sdl_audio, "SDL_QueueAudio"), "queued audio write path");
-    require(contains(sdl_audio, "SDL_GetQueuedAudioSize"), "queued audio size check");
+    require(contains(sdl_audio, "desired.callback = &SdlAudio::sdl_audio_callback"), "SDL callback audio device");
+    require(contains(sdl_audio, "ring_->read_some"), "callback reads the PCM ring");
+    require(contains(sdl_audio, "underrun_frames_"), "callback counts underflow rather than silently losing it");
     require(contains(sdl_audio, "SDL_GetCurrentAudioDriver"), "audio startup reports the selected runtime driver");
-    require(contains(sdl_audio, "start_buffer_samples_"), "audio prebuffer");
+    require(contains(sdl_audio, "start_buffer_frames_"), "audio prebuffer");
     require(contains(sdl_audio, "playback_started_"), "audio playback start state");
-    require(contains(sdl_audio, "queue_limit_samples_"), "audio queue limit");
-    require(!contains(sdl_audio, "audio_callback"), "audio callback must not be used");
-    require(!contains(sdl_audio, "SDL_LockAudioDevice"), "audio callback lock must not be used");
+    require(!contains(sdl_audio, "SDL_QueueAudio"), "legacy short-write queue path removed");
+
+    const auto pcm_ring = read_file(root / "src" / "audio" / "pcm_ring.hpp");
+    require(contains(pcm_ring, "single-producer/single-consumer"), "PCM ring declares its ownership model");
+    require(contains(pcm_ring, "write_all"), "PCM ring rejects a batch instead of partially writing it");
+
+    const auto emulation_runtime = read_file(root / "src" / "emulation" / "emulation_runtime.cpp");
+    require(contains(emulation_runtime, "std::jthread"), "mGBA runs on an isolated emulation worker");
+    require(contains(emulation_runtime, "pcm_ring_.queued_frames()"), "emulation pacing uses the audio water level");
+    require(contains(emulation_runtime, "render_timeline_"), "video is a bounded latest-wins timeline");
+    require(contains(emulation_runtime, "take_snapshot_for_audio"), "video presentation follows the audio clock");
 
     const auto mgba_core = read_file(root / "src" / "core" / "mgba_core.cpp");
     require(contains(mgba_core, "core_->reset(core_);\n    configure_audio(audio_sample_rate_);"), "audio configured after reset");
@@ -130,6 +138,7 @@ int main()
     require(contains(tdvp_shm, "wl_surface_attach"), "TDVP attaches shared-memory buffers directly to Wayland");
     require(contains(tdvp_shm, "scale_game_pixels"), "TDVP does dedicated nearest-neighbour game scaling");
     require(contains(tdvp_shm, "static_generation"), "TDVP caches static scaled UI buffers");
+    require(!contains(tdvp_shm, "while (wl_display_dispatch"), "TDVP does not block audio-sensitive UI work on buffer release");
     require(contains(renderer, "{0, 79}"), "bottom slot 1");
     require(contains(renderer, "{79, 54}"), "bottom slot 2");
     require(contains(renderer, "{133, 54}"), "bottom slot 3");

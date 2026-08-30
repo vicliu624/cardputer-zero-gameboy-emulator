@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -6,23 +7,26 @@
 
 #include <SDL.h>
 
-#include "app/app.hpp"
+#include "audio/pcm_ring.hpp"
 #include "core/mgba_core.hpp"
+#include "emulation/emulation_runtime.hpp"
 #include "input/input_frame.hpp"
+#include "platform/presentation_profile.hpp"
 #include "platform/sdl_audio.hpp"
 #include "platform/sdl_platform.hpp"
-#include "platform/presentation_profile.hpp"
 #include "render/renderer.hpp"
-#include "storage/paths.hpp"
 #include "util/cli.hpp"
 
 namespace {
 
-constexpr double kGbaFramesPerSecond = 59.727500569606;
-constexpr int kAudioMaxFramesPerTick = 2048;
-constexpr int kAudioDeviceBufferFrames = 1024;
-constexpr int kAudioStartBufferFrames = 4096;
-constexpr int kAudioQueueLimitFrames = 8192;
+constexpr double kPresentationFramesPerSecond = 59.727500569606;
+constexpr int kK230PreferredSampleRate = 44100;
+constexpr int kDefaultPreferredSampleRate = 48000;
+constexpr int kK230CallbackFrames = 512;
+constexpr int kDefaultCallbackFrames = 1024;
+constexpr int kAudioTargetMilliseconds = 80;
+constexpr int kAudioStartMilliseconds = 60;
+constexpr int kAudioCapacityMilliseconds = 160;
 
 std::filesystem::path current_working_directory()
 {
@@ -63,6 +67,11 @@ czgba::render::RenderLayoutProfile render_layout_profile_from_presentation(
         : czgba::render::RenderLayoutProfile::CardputerZero;
 }
 
+int frames_for_milliseconds(int sample_rate, int milliseconds)
+{
+    return std::max(1, (sample_rate * milliseconds) / 1000);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -88,6 +97,8 @@ int main(int argc, char** argv)
     const auto presentation_profile = presentation_profile_from_cli(options.device_profile);
     const auto render_layout_profile = render_layout_profile_from_presentation(presentation_profile);
     const auto canvas_spec = czgba::render::canvas_spec(render_layout_profile);
+    const bool k230_profile = presentation_profile == czgba::platform::PresentationProfile::TdvpK230;
+    const int preferred_sample_rate = k230_profile ? kK230PreferredSampleRate : kDefaultPreferredSampleRate;
 
     czgba::platform::SdlPlatform platform;
     (void)options.scale;
@@ -95,70 +106,125 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    const auto ring_capacity_frames = frames_for_milliseconds(preferred_sample_rate, kAudioCapacityMilliseconds);
+    czgba::audio::PcmRing pcm_ring(static_cast<std::size_t>(ring_capacity_frames) * 2);
     czgba::platform::SdlAudio audio;
     czgba::platform::SdlAudioConfig audio_config;
-    audio_config.sample_rate = 48000;
+    audio_config.sample_rate = preferred_sample_rate;
     audio_config.channels = 2;
-    audio_config.device_buffer_frames = kAudioDeviceBufferFrames;
-    audio_config.start_buffer_frames = kAudioStartBufferFrames;
-    audio_config.buffer_limit_frames = kAudioQueueLimitFrames;
-    const bool audio_ok = !options.no_audio && audio.init(audio_config);
+    audio_config.callback_buffer_frames = k230_profile ? kK230CallbackFrames : kDefaultCallbackFrames;
+    audio_config.start_buffer_frames = frames_for_milliseconds(preferred_sample_rate, kAudioStartMilliseconds);
+    const bool audio_ok = !options.no_audio && audio.init(pcm_ring, audio_config);
     if (options.no_audio) {
         std::cerr << "Audio disabled; continuing muted.\n";
     } else if (!audio_ok) {
         std::cerr << "Audio unavailable; continuing muted.\n";
     }
 
-    auto core = std::make_unique<czgba::core::MgbaCore>(mgba_log_level_from_cli(options.log_level));
-    czgba::app::App app(std::move(core), current_working_directory());
-    if (!options.rom_path.empty()) {
-        app.start_with_rom(czgba::storage::path_from_utf8(options.rom_path));
-    }
+    const int runtime_sample_rate = audio_ok ? audio.sample_rate() : preferred_sample_rate;
+    czgba::emulation::RuntimeConfig runtime_config;
+    runtime_config.working_directory = current_working_directory();
+    runtime_config.rom_path = options.rom_path;
+    runtime_config.log_level = mgba_log_level_from_cli(options.log_level);
+    runtime_config.sample_rate = runtime_sample_rate;
+    runtime_config.use_audio_clock = audio_ok;
+    runtime_config.target_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(runtime_sample_rate, kAudioTargetMilliseconds));
+    runtime_config.start_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(runtime_sample_rate, kAudioStartMilliseconds));
+    runtime_config.max_audio_read_frames = 4096;
+    const auto core_log_level = runtime_config.log_level;
+    czgba::emulation::EmulationRuntime runtime(
+        std::move(runtime_config),
+        pcm_ring,
+        [core_log_level] { return std::make_unique<czgba::core::MgbaCore>(core_log_level); });
+    runtime.start();
 
     czgba::render::Renderer renderer(render_layout_profile);
     czgba::input::InputFrame input;
+    std::shared_ptr<const czgba::emulation::RenderSnapshot> displayed_snapshot;
 
     using clock = std::chrono::steady_clock;
-    const auto frame_duration = std::chrono::duration_cast<clock::duration>(
-        std::chrono::duration<double>(1.0 / kGbaFramesPerSecond));
-    auto next_frame = clock::now();
-    auto previous_tick = next_frame;
+    const auto presentation_duration = std::chrono::duration_cast<clock::duration>(
+        std::chrono::duration<double>(1.0 / kPresentationFramesPerSecond));
+    auto next_presentation = clock::now();
+    auto next_telemetry = next_presentation + std::chrono::seconds(1);
+    std::uint64_t observed_underruns = 0;
     int presented_frames = 0;
 
-    while (!platform.should_quit() && !app.should_quit()) {
-        const auto now = clock::now();
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_tick);
-        previous_tick = now;
-
+    while (!platform.should_quit()) {
         platform.poll_events(input);
-        app.tick(elapsed);
-        app.update(input);
+        runtime.submit_input(input);
 
+        czgba::platform::SdlAudioMetrics audio_metrics;
         if (audio.active()) {
-            const auto samples = app.read_audio_samples(audio.sample_rate(), kAudioMaxFramesPerTick);
-            audio.write(samples.samples());
-        } else if (!audio.active()) {
-            app.read_audio_samples(48000, kAudioMaxFramesPerTick);
+            audio_metrics = audio.metrics();
+            if (audio_metrics.underrun_frames > observed_underruns && audio.playing()) {
+                // Recover on the next UI iteration rather than waiting for
+                // periodic telemetry. The callback has already inserted
+                // silence; pausing now prevents a repeated underrun burst.
+                std::cerr << "AUDIO underrun detected; pausing and rebuilding the PCM prebuffer\n";
+                audio.pause(true);
+                runtime.notify_audio_paused();
+                audio_metrics = audio.metrics();
+            }
+            observed_underruns = audio_metrics.underrun_frames;
+
+            if (runtime.audio_ready()) {
+                (void)audio.start_if_prebuffered();
+            } else if (audio.playing()) {
+                // SDL_PauseAudioDevice stops the callback before PcmRing is
+                // cleared, so resume always starts from a complete prebuffer.
+                audio.pause(true);
+                runtime.notify_audio_paused();
+            }
         }
 
-        renderer.draw(app.render_state());
-        platform.present(
-            renderer.canvas().data(),
-            renderer.canvas().width(),
-            renderer.canvas().height(),
-            renderer.canvas().pitch_bytes());
-        ++presented_frames;
+        if (audio.playing()) {
+            if (auto snapshot = runtime.take_snapshot_for_audio(
+                    audio_metrics.callback_frames,
+                    static_cast<std::size_t>(audio.callback_buffer_frames()))) {
+                displayed_snapshot = std::move(snapshot);
+            }
+        } else if (auto snapshot = runtime.take_latest_snapshot()) {
+            displayed_snapshot = std::move(snapshot);
+        }
+
+        if (displayed_snapshot) {
+            renderer.draw(displayed_snapshot->state);
+            platform.present(
+                renderer.canvas().data(),
+                renderer.canvas().width(),
+                renderer.canvas().height(),
+                renderer.canvas().pitch_bytes());
+            ++presented_frames;
+        }
+
+        const auto now = clock::now();
+        if (audio.active() && now >= next_telemetry) {
+            audio_metrics = audio.metrics();
+            const auto runtime_metrics = runtime.metrics();
+            std::cout << "AUDIO telemetry: driver=" << audio.driver_name()
+                      << " rate=" << audio.sample_rate()
+                      << " callback=" << audio.callback_buffer_frames()
+                      << " queued=" << audio_metrics.queued_frames
+                      << " underrun=" << audio_metrics.underrun_frames
+                      << " rejected=" << audio_metrics.rejected_frames
+                      << " emulated=" << runtime_metrics.emulated_frames
+                      << " video-drop=" << runtime_metrics.video_frames_dropped << '\n';
+
+            next_telemetry = now + std::chrono::seconds(1);
+        }
 
         if (options.max_frames > 0 && presented_frames >= options.max_frames) {
             break;
         }
 
-        next_frame += frame_duration;
-        std::this_thread::sleep_until(next_frame);
-        if (clock::now() > next_frame + std::chrono::milliseconds(100)) {
-            next_frame = clock::now();
+        next_presentation += presentation_duration;
+        std::this_thread::sleep_until(next_presentation);
+        if (clock::now() > next_presentation + std::chrono::milliseconds(100)) {
+            next_presentation = clock::now();
         }
     }
 
+    runtime.stop();
     return 0;
 }

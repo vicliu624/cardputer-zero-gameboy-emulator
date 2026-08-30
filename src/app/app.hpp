@@ -44,7 +44,10 @@ public:
     ~App();
 
     void start_with_rom(std::filesystem::path rom_path);
-    void update(const input::InputFrame& input);
+    // UI commands are always applied, but the emulation owner decides whether
+    // this iteration may advance a frame. Audio-buffer pacing therefore no
+    // longer depends on Wayland presentation cadence.
+    void update(const input::InputFrame& input, bool advance_emulation = true);
     void tick(std::chrono::milliseconds elapsed);
     audio::AudioSampleBatch read_audio_samples(int sample_rate, int max_frames);
     RenderState render_state() const;
