@@ -24,6 +24,7 @@ constexpr int kK230PreferredSampleRate = 44100;
 constexpr int kDefaultPreferredSampleRate = 48000;
 constexpr int kK230CallbackFrames = 512;
 constexpr int kDefaultCallbackFrames = 1024;
+constexpr int kK230PulsePlaybackBufferFrames = kK230CallbackFrames * 4;
 
 struct AudioBufferTiming {
     int target_milliseconds;
@@ -32,16 +33,16 @@ struct AudioBufferTiming {
     int output_pipeline_milliseconds;
 };
 
-// The TDVP K230 PulseAudio profile uses four period-driven 256-frame ALSA
-// fragments. PulseAudio consequently pulls several 512-frame SDL callbacks
-// at startup before the first hardware period is audible. The ring must cover
-// that handshake plus a full UI scheduling quantum; otherwise the callback
-// inserts silence even though the emulation worker can sustain 60 fps.
+// The TDVP K230 profile has two independent output queues: a four-callback
+// SDL2/PulseAudio client queue (46.4 ms at 44.1 kHz) and a period-driven
+// four-by-256-frame ALSA sink. Keep the emulator queue just large enough to
+// survive one UI scheduling quantum; making it cover the downstream queues
+// would add latency without preventing an ALSA XRUN.
 constexpr AudioBufferTiming kK230AudioTiming{
-    .target_milliseconds = 120,
-    .start_milliseconds = 100,
-    .capacity_milliseconds = 200,
-    .output_pipeline_milliseconds = 70,
+    .target_milliseconds = 80,
+    .start_milliseconds = 80,
+    .capacity_milliseconds = 160,
+    .output_pipeline_milliseconds = 120,
 };
 constexpr AudioBufferTiming kDefaultAudioTiming{
     .target_milliseconds = 80,
@@ -137,6 +138,8 @@ int main(int argc, char** argv)
     audio_config.channels = 2;
     audio_config.callback_buffer_frames = k230_profile ? kK230CallbackFrames : kDefaultCallbackFrames;
     audio_config.start_buffer_frames = frames_for_milliseconds(preferred_sample_rate, audio_timing.start_milliseconds);
+    audio_config.pulse_playback_buffer_frames =
+        k230_profile ? kK230PulsePlaybackBufferFrames : 0;
     const bool audio_ok = !options.no_audio && audio.init(pcm_ring, audio_config);
     if (options.no_audio) {
         std::cerr << "Audio disabled; continuing muted.\n";

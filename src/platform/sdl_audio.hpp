@@ -17,6 +17,12 @@ struct SdlAudioConfig {
     int channels = 2;
     int callback_buffer_frames = 512;
     int start_buffer_frames = 3072;
+    // Zero keeps SDL2's upstream PulseAudio buffering policy. Positive values
+    // request an explicit per-stream playback queue from TDVP's SDL2 runtime.
+    // This is deliberately separate from the callback size: a small callback
+    // remains useful for the emulation clock while the server-side queue
+    // absorbs scheduling jitter before it reaches the ALSA sink.
+    int pulse_playback_buffer_frames = 0;
 };
 
 enum class SdlAudioState {

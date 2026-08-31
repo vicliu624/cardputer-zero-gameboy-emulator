@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <string>
 
 namespace czgba::platform {
 
@@ -36,6 +37,17 @@ bool SdlAudio::init(audio::PcmRing& ring, const SdlAudioConfig& config)
 
     configured_ring_ = &ring;
     config_ = config;
+
+    // TDVP's SDL2 package recognizes this opt-in hint and creates a
+    // per-stream PulseAudio queue without retuning the K230 ALSA sink. Set it
+    // before SDL initializes any audio backend; upstream SDL2 simply ignores
+    // the private hint, which preserves normal host behavior.
+    if (config.pulse_playback_buffer_frames > 0) {
+        const auto requested_frames = std::to_string(std::max(
+            config.pulse_playback_buffer_frames,
+            config.callback_buffer_frames));
+        SDL_SetHint("SDL_AUDIO_PULSEAUDIO_BUFFER_FRAMES", requested_frames.c_str());
+    }
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         std::cerr << "SDL audio init failed: " << SDL_GetError() << '\n';
@@ -92,7 +104,12 @@ bool SdlAudio::init(audio::PcmRing& ring, const SdlAudioConfig& config)
     std::cout << "SDL audio driver: " << driver_name_ << '\n';
     std::cout << "SDL audio: " << sample_rate_ << " Hz, " << channels_
               << " channels, callback " << callback_buffer_frames_
-              << " frames, prebuffer " << start_buffer_frames_ << " frames\n";
+              << " frames, prebuffer " << start_buffer_frames_ << " frames";
+    if (config_.pulse_playback_buffer_frames > 0) {
+        std::cout << ", PulseAudio stream buffer "
+                  << config_.pulse_playback_buffer_frames << " frames";
+    }
+    std::cout << '\n';
     return true;
 }
 
