@@ -24,9 +24,31 @@ constexpr int kK230PreferredSampleRate = 44100;
 constexpr int kDefaultPreferredSampleRate = 48000;
 constexpr int kK230CallbackFrames = 512;
 constexpr int kDefaultCallbackFrames = 1024;
-constexpr int kAudioTargetMilliseconds = 80;
-constexpr int kAudioStartMilliseconds = 60;
-constexpr int kAudioCapacityMilliseconds = 160;
+
+struct AudioBufferTiming {
+    int target_milliseconds;
+    int start_milliseconds;
+    int capacity_milliseconds;
+    int output_pipeline_milliseconds;
+};
+
+// The TDVP K230 PulseAudio profile uses four period-driven 256-frame ALSA
+// fragments. PulseAudio consequently pulls several 512-frame SDL callbacks
+// at startup before the first hardware period is audible. The ring must cover
+// that handshake plus a full UI scheduling quantum; otherwise the callback
+// inserts silence even though the emulation worker can sustain 60 fps.
+constexpr AudioBufferTiming kK230AudioTiming{
+    .target_milliseconds = 120,
+    .start_milliseconds = 100,
+    .capacity_milliseconds = 200,
+    .output_pipeline_milliseconds = 70,
+};
+constexpr AudioBufferTiming kDefaultAudioTiming{
+    .target_milliseconds = 80,
+    .start_milliseconds = 60,
+    .capacity_milliseconds = 160,
+    .output_pipeline_milliseconds = 0,
+};
 
 std::filesystem::path current_working_directory()
 {
@@ -99,6 +121,7 @@ int main(int argc, char** argv)
     const auto canvas_spec = czgba::render::canvas_spec(render_layout_profile);
     const bool k230_profile = presentation_profile == czgba::platform::PresentationProfile::TdvpK230;
     const int preferred_sample_rate = k230_profile ? kK230PreferredSampleRate : kDefaultPreferredSampleRate;
+    const auto& audio_timing = k230_profile ? kK230AudioTiming : kDefaultAudioTiming;
 
     czgba::platform::SdlPlatform platform;
     (void)options.scale;
@@ -106,14 +129,14 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const auto ring_capacity_frames = frames_for_milliseconds(preferred_sample_rate, kAudioCapacityMilliseconds);
+    const auto ring_capacity_frames = frames_for_milliseconds(preferred_sample_rate, audio_timing.capacity_milliseconds);
     czgba::audio::PcmRing pcm_ring(static_cast<std::size_t>(ring_capacity_frames) * 2);
     czgba::platform::SdlAudio audio;
     czgba::platform::SdlAudioConfig audio_config;
     audio_config.sample_rate = preferred_sample_rate;
     audio_config.channels = 2;
     audio_config.callback_buffer_frames = k230_profile ? kK230CallbackFrames : kDefaultCallbackFrames;
-    audio_config.start_buffer_frames = frames_for_milliseconds(preferred_sample_rate, kAudioStartMilliseconds);
+    audio_config.start_buffer_frames = frames_for_milliseconds(preferred_sample_rate, audio_timing.start_milliseconds);
     const bool audio_ok = !options.no_audio && audio.init(pcm_ring, audio_config);
     if (options.no_audio) {
         std::cerr << "Audio disabled; continuing muted.\n";
@@ -126,8 +149,8 @@ int main(int argc, char** argv)
         czgba::emulation::AudioClockConfig config;
         config.sample_rate = sample_rate;
         config.use_audio_clock = use_audio_clock;
-        config.target_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(sample_rate, kAudioTargetMilliseconds));
-        config.start_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(sample_rate, kAudioStartMilliseconds));
+        config.target_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(sample_rate, audio_timing.target_milliseconds));
+        config.start_audio_frames = static_cast<std::size_t>(frames_for_milliseconds(sample_rate, audio_timing.start_milliseconds));
         return config;
     };
     const auto initial_audio_clock = make_audio_clock_config(runtime_sample_rate, audio_ok);
@@ -146,6 +169,14 @@ int main(int argc, char** argv)
         pcm_ring,
         [core_log_level] { return std::make_unique<czgba::core::MgbaCore>(core_log_level); });
     runtime.start();
+
+    if (audio_ok) {
+        std::cerr << "Audio clock: start=" << audio_timing.start_milliseconds
+                  << "ms target=" << audio_timing.target_milliseconds
+                  << "ms capacity=" << audio_timing.capacity_milliseconds
+                  << "ms output-pipeline=" << audio_timing.output_pipeline_milliseconds
+                  << "ms\n";
+    }
 
     czgba::render::Renderer renderer(render_layout_profile);
     czgba::input::InputFrame input;
@@ -217,8 +248,13 @@ int main(int argc, char** argv)
         }
 
         if (audio.playing()) {
+            const auto output_pipeline_frames = static_cast<std::uint64_t>(
+                frames_for_milliseconds(audio.sample_rate(), audio_timing.output_pipeline_milliseconds));
+            const auto audible_audio_frame = audio_metrics.callback_frames > output_pipeline_frames
+                ? audio_metrics.callback_frames - output_pipeline_frames
+                : 0;
             if (auto snapshot = runtime.take_snapshot_for_audio(
-                    audio_metrics.callback_frames,
+                    audible_audio_frame,
                     static_cast<std::size_t>(audio.callback_buffer_frames()))) {
                 displayed_snapshot = std::move(snapshot);
             }
