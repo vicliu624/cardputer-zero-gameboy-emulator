@@ -227,6 +227,11 @@ add_executable(cardputer-zero-gba-audio-core-smoke
     src/storage/rom_scanner.cpp
 )
 
+add_executable(cardputer-zero-gba-sdl-audio-queue-smoke
+    tests/sdl_audio_queue_smoke.cpp
+    src/platform/sdl_audio.cpp
+)
+
 add_executable(cardputer-zero-gba-app-menu-smoke
     tests/app_menu_smoke.cpp
     src/app/app.cpp
@@ -265,6 +270,7 @@ add_executable(cardputer-zero-gba-tdvp-present-geometry-smoke
 
 target_compile_features(cardputer-zero-gba-packaging-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-audio-core-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-sdl-audio-queue-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-app-menu-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-presentation-profile-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-renderer-layout-smoke PRIVATE cxx_std_20)
@@ -277,6 +283,8 @@ if (BUILD_TESTING)
              COMMAND cardputer-zero-gba-packaging-smoke)
     add_test(NAME cardputer-zero-gba-audio-core-smoke
              COMMAND cardputer-zero-gba-audio-core-smoke)
+    add_test(NAME cardputer-zero-gba-sdl-audio-queue-smoke
+             COMMAND cardputer-zero-gba-sdl-audio-queue-smoke)
     add_test(NAME cardputer-zero-gba-app-menu-smoke
              COMMAND cardputer-zero-gba-app-menu-smoke)
     add_test(NAME cardputer-zero-gba-presentation-profile-smoke
@@ -345,6 +353,11 @@ target_include_directories(cardputer-zero-gba-audio-core-smoke
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
+target_include_directories(cardputer-zero-gba-sdl-audio-queue-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
 target_include_directories(cardputer-zero-gba-app-menu-smoke
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -387,6 +400,12 @@ target_compile_definitions(cardputer-zero-gba-audio-core-smoke
         _CRT_SECURE_NO_WARNINGS
 )
 
+target_compile_definitions(cardputer-zero-gba-sdl-audio-queue-smoke
+    PRIVATE
+        NOMINMAX
+        _CRT_SECURE_NO_WARNINGS
+)
+
 target_compile_definitions(cardputer-zero-gba
     PRIVATE
         CARDPUTER_ZERO_GBA_VERSION="${PROJECT_VERSION}"
@@ -422,6 +441,11 @@ target_link_libraries(cardputer-zero-gba-audio-core-smoke
         mgba
 )
 
+target_link_libraries(cardputer-zero-gba-sdl-audio-queue-smoke
+    PRIVATE
+        SDL2::SDL2
+)
+
 target_link_libraries(cardputer-zero-gba-renderer-layout-smoke
     PRIVATE
         SDL2::SDL2
@@ -442,6 +466,7 @@ endif()
 if (MSVC)
     target_compile_options(cardputer-zero-gba PRIVATE /W4 /permissive-)
     target_compile_options(cardputer-zero-gba-audio-core-smoke PRIVATE /W4 /permissive-)
+    target_compile_options(cardputer-zero-gba-sdl-audio-queue-smoke PRIVATE /W4 /permissive-)
     target_compile_options(cardputer-zero-gba-app-menu-smoke PRIVATE /W4 /permissive-)
     target_compile_options(cardputer-zero-gba-presentation-profile-smoke PRIVATE /W4 /permissive-)
     target_compile_options(cardputer-zero-gba-renderer-layout-smoke PRIVATE /W4 /permissive-)
@@ -449,6 +474,7 @@ if (MSVC)
 else()
     target_compile_options(cardputer-zero-gba PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(cardputer-zero-gba-audio-core-smoke PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(cardputer-zero-gba-sdl-audio-queue-smoke PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(cardputer-zero-gba-app-menu-smoke PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(cardputer-zero-gba-presentation-profile-smoke PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(cardputer-zero-gba-renderer-layout-smoke PRIVATE -Wall -Wextra -Wpedantic)

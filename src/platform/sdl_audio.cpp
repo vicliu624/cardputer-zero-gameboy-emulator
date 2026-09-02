@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iostream>
 #include <limits>
+#include <string>
 
 namespace czgba::platform {
 namespace {
@@ -26,6 +27,17 @@ SdlAudio::~SdlAudio()
 bool SdlAudio::init(const SdlAudioConfig& config)
 {
     shutdown();
+
+    // TDVP's SDL2 runtime recognizes this private opt-in hint and creates a
+    // larger per-stream PulseAudio queue without changing the system ALSA
+    // sink policy. Upstream SDL2 ignores unknown hints, so other platforms
+    // retain their existing behavior.
+    if (config.pulse_playback_buffer_frames > 0) {
+        const auto requested_frames = std::to_string(std::max(
+            config.pulse_playback_buffer_frames,
+            config.device_buffer_frames));
+        SDL_SetHint("SDL_AUDIO_PULSEAUDIO_BUFFER_FRAMES", requested_frames.c_str());
+    }
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         std::cerr << "SDL audio init failed: " << SDL_GetError() << '\n';
@@ -60,6 +72,9 @@ bool SdlAudio::init(const SdlAudioConfig& config)
     channels_ = obtained.channels;
     queue_limit_samples_ = frames_to_samples(queue_limit_frames);
     start_buffer_samples_ = frames_to_samples(start_buffer_frames);
+    samples_submitted_ = 0;
+    samples_queued_ = 0;
+    samples_dropped_ = 0;
     playback_started_ = false;
     initialized_ = true;
 
@@ -68,7 +83,12 @@ bool SdlAudio::init(const SdlAudioConfig& config)
     const char* driver = SDL_GetCurrentAudioDriver();
     std::cout << "SDL audio driver: " << (driver != nullptr ? driver : "unknown") << '\n';
     std::cout << "SDL audio: " << sample_rate_ << " Hz, " << channels_
-              << " channels, queued audio limit " << queue_limit_samples_ << " samples\n";
+              << " channels, queued audio limit " << queue_limit_samples_ << " samples";
+    if (config.pulse_playback_buffer_frames > 0) {
+        std::cout << ", PulseAudio stream buffer request "
+                  << config.pulse_playback_buffer_frames << " frames";
+    }
+    std::cout << '\n';
     return true;
 }
 
@@ -88,6 +108,9 @@ void SdlAudio::shutdown()
 
     queue_limit_samples_ = 0;
     start_buffer_samples_ = 0;
+    samples_submitted_ = 0;
+    samples_queued_ = 0;
+    samples_dropped_ = 0;
     playback_started_ = false;
 }
 
@@ -142,18 +165,23 @@ std::size_t SdlAudio::write(std::span<const std::int16_t> samples)
         return 0;
     }
 
+    samples_submitted_ += samples.size();
     const auto writable = writable_samples();
     if (writable == 0) {
+        samples_dropped_ += samples.size();
         return 0;
     }
 
     auto samples_to_write = std::min(samples.size(), writable);
     samples_to_write -= samples_to_write % static_cast<std::size_t>(std::max(1, channels_));
     if (samples_to_write == 0) {
+        samples_dropped_ += samples.size();
         return 0;
     }
+    samples_dropped_ += samples.size() - samples_to_write;
     const auto bytes_to_write = samples_to_write * sizeof(std::int16_t);
     if (bytes_to_write > static_cast<std::size_t>(std::numeric_limits<Uint32>::max())) {
+        samples_dropped_ += samples_to_write;
         return 0;
     }
 
@@ -162,8 +190,10 @@ std::size_t SdlAudio::write(std::span<const std::int16_t> samples)
             samples.data(),
             static_cast<Uint32>(bytes_to_write)) != 0) {
         std::cerr << "SDL audio queue failed: " << SDL_GetError() << '\n';
+        samples_dropped_ += samples_to_write;
         return 0;
     }
+    samples_queued_ += samples_to_write;
 
     if (!playback_started_ && buffered_samples() >= start_buffer_samples_) {
         SDL_PauseAudioDevice(device_id_, 0);
@@ -171,6 +201,17 @@ std::size_t SdlAudio::write(std::span<const std::int16_t> samples)
     }
 
     return samples_to_write;
+}
+
+SdlAudioStats SdlAudio::stats() const
+{
+    return {
+        samples_submitted_,
+        samples_queued_,
+        samples_dropped_,
+        buffered_samples(),
+        playback_started_,
+    };
 }
 
 std::size_t SdlAudio::frames_to_samples(int frames) const

@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -23,6 +24,7 @@ constexpr int kAudioMaxFramesPerTick = 2048;
 constexpr int kAudioDeviceBufferFrames = 1024;
 constexpr int kAudioStartBufferFrames = 4096;
 constexpr int kAudioQueueLimitFrames = 8192;
+constexpr int kK230PulsePlaybackBufferFrames = 4096;
 
 std::filesystem::path current_working_directory()
 {
@@ -61,6 +63,35 @@ czgba::render::RenderLayoutProfile render_layout_profile_from_presentation(
     return presentation_profile == czgba::platform::PresentationProfile::TdvpK230
         ? czgba::render::RenderLayoutProfile::TdvpK230
         : czgba::render::RenderLayoutProfile::CardputerZero;
+}
+
+bool frame_timing_enabled()
+{
+    const char* value = std::getenv("CARDPUTER_ZERO_GBA_FRAME_TIMING");
+    return value != nullptr && value[0] == '1' && value[1] == '\0';
+}
+
+void maybe_log_audio_stats(
+    const czgba::platform::SdlAudio& audio,
+    std::chrono::steady_clock::time_point& last_log)
+{
+    if (!frame_timing_enabled()) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (last_log.time_since_epoch().count() != 0 &&
+        now - last_log < std::chrono::seconds(1)) {
+        return;
+    }
+    last_log = now;
+    const auto stats = audio.stats();
+    std::cerr << "SDL audio timing: submitted=" << stats.samples_submitted
+              << " queued=" << stats.samples_queued
+              << " dropped=" << stats.samples_dropped
+              << " buffered=" << stats.queued_samples
+              << " playback=" << (stats.playback_started ? "yes" : "no")
+              << '\n';
 }
 
 } // namespace
@@ -102,6 +133,9 @@ int main(int argc, char** argv)
     audio_config.device_buffer_frames = kAudioDeviceBufferFrames;
     audio_config.start_buffer_frames = kAudioStartBufferFrames;
     audio_config.buffer_limit_frames = kAudioQueueLimitFrames;
+    if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230) {
+        audio_config.pulse_playback_buffer_frames = kK230PulsePlaybackBufferFrames;
+    }
     const bool audio_ok = !options.no_audio && audio.init(audio_config);
     if (options.no_audio) {
         std::cerr << "Audio disabled; continuing muted.\n";
@@ -123,6 +157,7 @@ int main(int argc, char** argv)
         std::chrono::duration<double>(1.0 / kGbaFramesPerSecond));
     auto next_frame = clock::now();
     auto previous_tick = next_frame;
+    auto last_audio_stats_log = clock::time_point{};
     int presented_frames = 0;
 
     while (!platform.should_quit() && !app.should_quit()) {
@@ -137,6 +172,7 @@ int main(int argc, char** argv)
         if (audio.active()) {
             const auto samples = app.read_audio_samples(audio.sample_rate(), kAudioMaxFramesPerTick);
             audio.write(samples.samples());
+            maybe_log_audio_stats(audio, last_audio_stats_log);
         } else if (!audio.active()) {
             app.read_audio_samples(48000, kAudioMaxFramesPerTick);
         }
