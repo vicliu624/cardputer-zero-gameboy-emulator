@@ -321,21 +321,30 @@ endif()
 set(CZ_GBA_HAS_TDVP_WAYLAND_SHM OFF)
 if (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Buildroot)$")
     set(CZ_GBA_WAYLAND_HINTS)
+    set(CZ_GBA_WAYLAND_ROOT_SEARCH)
     if (CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY)
         list(APPEND CZ_GBA_WAYLAND_HINTS "${CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY}")
+        # This overlay is intentionally exported from the firmware that will
+        # run the application.  A cross toolchain may expose another
+        # sysroot with the same SONAMEs, so a mere HINTS entry is not enough:
+        # choose the declared firmware development ABI deterministically.
+        list(APPEND CZ_GBA_WAYLAND_ROOT_SEARCH NO_CMAKE_FIND_ROOT_PATH)
     endif()
     find_path(CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR
         NAMES wayland-client.h
         HINTS ${CZ_GBA_WAYLAND_HINTS}
-        PATH_SUFFIXES include)
+        PATH_SUFFIXES include
+        ${CZ_GBA_WAYLAND_ROOT_SEARCH})
     find_library(CZ_GBA_WAYLAND_CLIENT_LIBRARY
         NAMES wayland-client
         HINTS ${CZ_GBA_WAYLAND_HINTS}
-        PATH_SUFFIXES lib)
+        PATH_SUFFIXES lib
+        ${CZ_GBA_WAYLAND_ROOT_SEARCH})
     find_library(CZ_GBA_FFI_LIBRARY
         NAMES ffi
         HINTS ${CZ_GBA_WAYLAND_HINTS}
-        PATH_SUFFIXES lib)
+        PATH_SUFFIXES lib
+        ${CZ_GBA_WAYLAND_ROOT_SEARCH})
     if (CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR AND CZ_GBA_WAYLAND_CLIENT_LIBRARY AND CZ_GBA_FFI_LIBRARY)
         set(CZ_GBA_HAS_TDVP_WAYLAND_SHM ON)
         target_include_directories(cardputer-zero-gba SYSTEM PRIVATE "${CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR}")
