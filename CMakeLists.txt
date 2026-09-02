@@ -151,6 +151,14 @@ if (CZ_GBA_BUNDLE_MGBA)
     set(USE_DISCORD_RPC OFF CACHE BOOL "" FORCE)
     set(ENABLE_SCRIPTING OFF CACHE BOOL "" FORCE)
     add_subdirectory("${CZ_GBA_MGBA_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/mgba-build" EXCLUDE_FROM_ALL)
+
+    # mGBA's upstream CMake checks for -pthread while compiling its static
+    # library, but a static archive cannot convey that link dependency to its
+    # consumers.  Keep the dependency on the mGBA target itself so every
+    # executable that links the bundled core receives the platform-correct
+    # thread link flags (notably the K230 glibc sysroot).
+    find_package(Threads REQUIRED)
+    target_link_libraries(mgba Threads::Threads)
 elseif (NOT TARGET mgba)
     # Upstream mGBA installs its headers and library but does not guarantee a
     # CMake package-config file on every release.  Keep the standard package
