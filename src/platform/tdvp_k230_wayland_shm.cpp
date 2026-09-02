@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "platform/presentation_profile.hpp"
+#include "platform/tdvp_k230_present_geometry.hpp"
 #include "platform/tdvp_k230_present_scheduler.hpp"
 #include "render/layout.hpp"
 #endif
@@ -54,6 +55,7 @@ struct TdvpK230WaylandShmState {
     int width = kK230LandscapeWidth;
     int height = kK230LandscapeHeight;
     std::uint64_t static_generation = 1;
+    bool full_damage_pending = true;
     int static_source_width = 0;
     int static_source_height = 0;
     std::vector<std::uint32_t> static_source;
@@ -457,6 +459,7 @@ void TdvpK230WaylandShm::present(
     dispatch_pending_events(state);
     if (static_pixels_changed(state, canvas_xrgb8888, canvas_width, canvas_height, source_stride)) {
         scale_static_pixels(state, canvas_xrgb8888, canvas_width, canvas_height, source_stride);
+        state.full_damage_pending = true;
     }
 
     State::Buffer* buffer = next_available_buffer(state);
@@ -480,7 +483,13 @@ void TdvpK230WaylandShm::present(
     wl_callback_add_listener(state.frame_callback, &kFrameCallbackListener, &state);
     buffer->busy = true;
     wl_surface_attach(state.surface, buffer->buffer, 0, 0);
-    wl_surface_damage(state.surface, 0, 0, state.width, state.height);
+    if (state.full_damage_pending) {
+        wl_surface_damage_buffer(state.surface, 0, 0, state.width, state.height);
+        state.full_damage_pending = false;
+    } else {
+        const auto game = tdvp_k230_game_damage_rect(canvas_width, canvas_height, state.width, state.height);
+        wl_surface_damage_buffer(state.surface, game.x, game.y, game.width, game.height);
+    }
     wl_surface_commit(state.surface);
     if (wl_display_flush(state.display) < 0 && errno != EAGAIN) {
         log_errno("wl_display_flush");

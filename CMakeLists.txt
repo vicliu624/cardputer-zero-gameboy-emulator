@@ -251,6 +251,10 @@ add_executable(cardputer-zero-gba-tdvp-present-scheduler-smoke
     tests/tdvp_present_scheduler_smoke.cpp
 )
 
+add_executable(cardputer-zero-gba-tdvp-present-geometry-smoke
+    tests/tdvp_present_geometry_smoke.cpp
+)
+
 target_compile_features(cardputer-zero-gba-packaging-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-audio-core-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-app-menu-smoke PRIVATE cxx_std_20)
@@ -258,6 +262,7 @@ target_compile_features(cardputer-zero-gba-presentation-profile-smoke PRIVATE cx
 target_compile_features(cardputer-zero-gba-renderer-layout-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-cli-profile-smoke PRIVATE cxx_std_20)
 target_compile_features(cardputer-zero-gba-tdvp-present-scheduler-smoke PRIVATE cxx_std_20)
+target_compile_features(cardputer-zero-gba-tdvp-present-geometry-smoke PRIVATE cxx_std_20)
 
 if (BUILD_TESTING)
     add_test(NAME cardputer-zero-gba-packaging-smoke
@@ -274,6 +279,8 @@ if (BUILD_TESTING)
              COMMAND cardputer-zero-gba-cli-profile-smoke)
     add_test(NAME cardputer-zero-gba-tdvp-present-scheduler-smoke
              COMMAND cardputer-zero-gba-tdvp-present-scheduler-smoke)
+    add_test(NAME cardputer-zero-gba-tdvp-present-geometry-smoke
+             COMMAND cardputer-zero-gba-tdvp-present-geometry-smoke)
 endif()
 
 target_include_directories(cardputer-zero-gba
@@ -351,6 +358,11 @@ target_include_directories(cardputer-zero-gba-cli-profile-smoke
 )
 
 target_include_directories(cardputer-zero-gba-tdvp-present-scheduler-smoke
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_include_directories(cardputer-zero-gba-tdvp-present-geometry-smoke
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
