@@ -89,7 +89,11 @@ void maybe_log_audio_stats(
     std::cerr << "SDL audio timing: submitted=" << stats.samples_submitted
               << " queued=" << stats.samples_queued
               << " dropped=" << stats.samples_dropped
-              << " buffered=" << stats.queued_samples
+              << " queue_failures=" << stats.queue_failures
+              << " queued=" << stats.queued_samples
+              << " pending=" << stats.pending_samples
+              << " total_buffered=" << stats.total_buffered_samples
+              << " high_watermark=" << (stats.high_watermark_reached ? "yes" : "no")
               << " playback=" << (stats.playback_started ? "yes" : "no")
               << '\n';
 }
@@ -167,6 +171,21 @@ int main(int argc, char** argv)
 
         platform.poll_events(input);
         app.tick(elapsed);
+
+        if (audio.active()) {
+            audio.service();
+            if (audio.should_throttle()) {
+                maybe_log_audio_stats(audio, last_audio_stats_log);
+                // Keep the core's audio timeline continuous when the output
+                // device is briefly late. Reset the simulation deadline so
+                // the next iteration does not compensate by running a burst
+                // of catch-up frames that would refill the queue immediately.
+                next_frame = clock::now();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+        }
+
         app.update(input);
 
         if (audio.active()) {

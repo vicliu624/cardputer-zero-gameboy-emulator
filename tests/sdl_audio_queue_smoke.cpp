@@ -64,7 +64,24 @@ int main()
 
     audio.pause(true);
     stats = audio.stats();
-    require(!stats.playback_started && stats.queued_samples == 0,
+    require(!stats.playback_started && stats.queued_samples == 0 && stats.pending_samples == 0,
             "pausing clears the queued-audio epoch");
+
+    // One producer tick can exceed the currently writable SDL queue. It must
+    // be retained for a later service() call rather than silently truncating
+    // the emulated PCM stream.
+    std::vector<std::int16_t> oversized_fragment(
+        static_cast<std::size_t>(config.buffer_limit_frames * config.channels * 2), 0);
+    require(audio.write(oversized_fragment) == oversized_fragment.size(),
+            "an oversized producer fragment is accepted in full");
+    stats = audio.stats();
+    require(stats.samples_submitted == one_fragment.size() * 2 + oversized_fragment.size() &&
+                stats.samples_dropped == 0 && stats.queue_failures == 0,
+            "overflow is retained without PCM loss or a queue failure");
+
+    audio.pause(true);
+    stats = audio.stats();
+    require(stats.queued_samples == 0 && stats.pending_samples == 0,
+            "pausing clears both SDL and retained PCM queues");
     return 0;
 }
