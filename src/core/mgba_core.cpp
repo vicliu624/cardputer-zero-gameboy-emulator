@@ -105,6 +105,7 @@ bool MgbaCore::load_rom(const std::string& rom_path)
         return false;
     }
 
+    video_normalization_pending_ = true;
     core_->reset(core_);
     configure_audio(audio_sample_rate_);
     return true;
@@ -118,8 +119,9 @@ void MgbaCore::unload_rom()
 void MgbaCore::reset()
 {
     if (core_ != nullptr) {
-        core_->reset(core_);
         pending_audio_.interleaved_s16.clear();
+        video_normalization_pending_ = true;
+        core_->reset(core_);
         configure_audio(audio_sample_rate_);
     }
 }
@@ -131,7 +133,7 @@ void MgbaCore::run_until_next_frame()
     }
 
     core_->runFrame(core_);
-    normalize_video();
+    video_normalization_pending_ = true;
     append_audio_samples(kMaxAudioFramesPerEmulatedFrame);
 }
 
@@ -144,6 +146,10 @@ void MgbaCore::set_input(const GbaInputState& input)
 
 GbaVideoFrame MgbaCore::video_frame() const
 {
+    if (video_normalization_pending_ && !mgba_native_video_.empty()) {
+        normalize_video();
+        video_normalization_pending_ = false;
+    }
     return {
         xrgb8888_video_.empty() ? nullptr : xrgb8888_video_.data(),
         static_cast<int>(width_),
@@ -289,6 +295,7 @@ void MgbaCore::destroy_core()
     }
     mgba_native_video_.clear();
     xrgb8888_video_.clear();
+    video_normalization_pending_ = true;
     pending_audio_.interleaved_s16.clear();
     pending_audio_.sample_rate = audio_sample_rate_;
 }
@@ -318,7 +325,7 @@ void MgbaCore::release_logger()
     logger_ = nullptr;
 }
 
-void MgbaCore::normalize_video()
+void MgbaCore::normalize_video() const
 {
     const std::size_t desired = static_cast<std::size_t>(width_) * height_;
     if (xrgb8888_video_.size() != desired) {

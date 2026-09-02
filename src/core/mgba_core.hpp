@@ -48,7 +48,11 @@ private:
     void destroy_core();
     void ensure_logger();
     void release_logger();
-    void normalize_video();
+    // mGBA advances at the emulation clock, while the TDVP presenter may
+    // intentionally coalesce several emulated frames into one Wayland
+    // commit. Convert the native framebuffer only when a consumer asks for
+    // it, so skipped presentations do not compete with audio output.
+    void normalize_video() const;
     void configure_audio(int sample_rate);
     void append_audio_samples(int max_frames);
     static std::uint32_t input_to_mgba_keys(const GbaInputState& input);
@@ -62,7 +66,8 @@ private:
     unsigned native_pitch_ = 256;
     int audio_sample_rate_ = 48000;
     std::vector<std::uint32_t> mgba_native_video_;
-    std::vector<std::uint32_t> xrgb8888_video_;
+    mutable std::vector<std::uint32_t> xrgb8888_video_;
+    mutable bool video_normalization_pending_ = true;
     audio::AudioSampleBatch pending_audio_;
 };
 

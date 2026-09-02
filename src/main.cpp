@@ -24,7 +24,11 @@ constexpr int kAudioMaxFramesPerTick = 2048;
 constexpr int kAudioDeviceBufferFrames = 1024;
 constexpr int kAudioStartBufferFrames = 4096;
 constexpr int kAudioQueueLimitFrames = 8192;
-constexpr int kK230PulsePlaybackBufferFrames = 4096;
+// K230 runs the VGLite compositor, PulseAudio and mGBA on one CPU. The
+// compositor's observed 200ms+ tail stalls require a larger server-side
+// reservoir than a desktop default, while the bounded SDL queue retains a
+// separate application-level backpressure limit.
+constexpr int kK230PulsePlaybackBufferFrames = 8192;
 
 std::filesystem::path current_working_directory()
 {
@@ -196,15 +200,23 @@ int main(int argc, char** argv)
             app.read_audio_samples(48000, kAudioMaxFramesPerTick);
         }
 
-        renderer.draw(app.render_state());
-        if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230) {
-            platform.present_tdvp_k230(renderer.tdvp_k230_presentation());
-        } else {
-            platform.present(
-                renderer.canvas().data(),
-                renderer.canvas().width(),
-                renderer.canvas().height(),
-                renderer.canvas().pitch_bytes());
+        // The TDVP presenter owns a single compositor-paced commit slot.
+        // Let emulation and audio continue at their native clock, but avoid
+        // normalizing a 240x160 frame or rebuilding presentation data while
+        // that slot is unavailable. When it becomes available we consume the
+        // newest mGBA framebuffer, so this never queues stale video.
+        if (presentation_profile != czgba::platform::PresentationProfile::TdvpK230 ||
+            platform.tdvp_k230_presentation_ready()) {
+            renderer.draw(app.render_state());
+            if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230) {
+                platform.present_tdvp_k230(renderer.tdvp_k230_presentation());
+            } else {
+                platform.present(
+                    renderer.canvas().data(),
+                    renderer.canvas().width(),
+                    renderer.canvas().height(),
+                    renderer.canvas().pitch_bytes());
+            }
         }
         ++presented_frames;
 

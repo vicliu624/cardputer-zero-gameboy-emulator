@@ -416,6 +416,21 @@ void TdvpK230WaylandShm::shutdown()
     state_.reset();
 }
 
+bool TdvpK230WaylandShm::ready_for_frame()
+{
+#if defined(CZ_GBA_HAS_TDVP_WAYLAND_SHM)
+    if (!state_) {
+        return false;
+    }
+
+    State& state = *state_;
+    dispatch_pending_events(state);
+    return !state.scheduler.frame_callback_pending() && next_available_buffer(state) != nullptr;
+#else
+    return false;
+#endif
+}
+
 void TdvpK230WaylandShm::present(const render::TdvpK230PresentationFrame& frame)
 {
 #if defined(CZ_GBA_HAS_TDVP_WAYLAND_SHM)

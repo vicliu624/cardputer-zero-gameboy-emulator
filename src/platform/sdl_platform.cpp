@@ -220,6 +220,14 @@ void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
     SDL_RenderPresent(renderer_);
 }
 
+bool SdlPlatform::tdvp_k230_presentation_ready()
+{
+    // The experimental direct-DRM mode remains ungated; the supported
+    // Wayland path can coalesce intermediate emulation frames before the
+    // expensive XRGB conversion is performed.
+    return !tdvp_k230_wayland_shm_ || tdvp_k230_wayland_shm_->ready_for_frame();
+}
+
 void SdlPlatform::present_tdvp_k230(const render::TdvpK230PresentationFrame& frame)
 {
     if (tdvp_k230_wayland_shm_) {

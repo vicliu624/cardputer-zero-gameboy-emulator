@@ -39,6 +39,7 @@ public:
     void shutdown();
     void poll_events(input::InputFrame& input);
     void present(const std::uint32_t* canvas_xrgb8888, int canvas_width, int canvas_height, int pitch_bytes);
+    bool tdvp_k230_presentation_ready();
     void present_tdvp_k230(const render::TdvpK230PresentationFrame& frame);
     bool should_quit() const;
 

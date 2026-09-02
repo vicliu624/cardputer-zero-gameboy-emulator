@@ -24,6 +24,9 @@ public:
 
     bool init(SDL_Window* window);
     void shutdown();
+    // Returns true only when a new frame can be built and committed without
+    // waiting for a compositor callback or writing a busy wl_buffer.
+    bool ready_for_frame();
     void present(const render::TdvpK230PresentationFrame& frame);
 
 private:
