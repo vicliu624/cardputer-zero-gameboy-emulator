@@ -51,18 +51,27 @@ int main()
     render::Renderer renderer(render::RenderLayoutProfile::TdvpK230);
     renderer.draw(state);
     const auto& canvas = renderer.canvas();
+    const auto& presentation = renderer.tdvp_k230_presentation();
 
     require(canvas.width() == T::ScreenW && canvas.height() == T::ScreenH,
             "TDVP renderer creates the dedicated 410x189 canvas");
-    require(pixel_at(canvas, T::GameX + 120, T::GameY + 80) == kFramePixel,
-            "native 240x160 GBA pixels are copied unchanged into the TDVP viewport");
-    require(pixel_at(canvas, T::GameX, T::GameY) != kFramePixel,
-            "TDVP viewport retains its application chrome border");
-    require(pixel_at(canvas, T::LeftX, T::LeftY) != render::rgb(7, 10, 13),
+    require(presentation.static_pixels_xrgb8888 != nullptr &&
+                presentation.static_width == T::ScreenW && presentation.static_height == T::ScreenH,
+            "TDVP renderer publishes a complete static chrome canvas");
+    require(presentation.game_frame_updated && presentation.game_pixels_xrgb8888 == pixels.data() &&
+                presentation.game_width == T::GameW && presentation.game_height == T::GameH,
+            "the raw 240x160 GBA frame is published without rebuilding the static canvas");
+    require(presentation.static_pixels_xrgb8888[
+                static_cast<std::size_t>(T::LeftY) * static_cast<std::size_t>(T::ScreenW) + T::LeftX] !=
+                render::rgb(7, 10, 13),
             "expanded left information rail is rendered");
-    require(pixel_at(canvas, T::RightX, T::RightY) != render::rgb(7, 10, 13),
+    require(presentation.static_pixels_xrgb8888[
+                static_cast<std::size_t>(T::RightY) * static_cast<std::size_t>(T::ScreenW) + T::RightX] !=
+                render::rgb(7, 10, 13),
             "expanded right control rail is rendered");
-    require(pixel_at(canvas, T::BarX, T::BarY) != render::rgb(7, 10, 13),
+    require(presentation.static_pixels_xrgb8888[
+                static_cast<std::size_t>(T::BarY) * static_cast<std::size_t>(T::ScreenW) + T::BarX] !=
+                render::rgb(7, 10, 13),
             "expanded F1-F5 command bar is rendered");
 
     const auto initial_static_generation = renderer.tdvp_playing_static_cache_generation();

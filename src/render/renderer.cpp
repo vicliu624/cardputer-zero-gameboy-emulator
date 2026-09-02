@@ -122,6 +122,11 @@ std::uint64_t Renderer::tdvp_playing_static_cache_generation() const
     return tdvp_playing_static_cache_generation_;
 }
 
+const TdvpK230PresentationFrame& Renderer::tdvp_k230_presentation() const
+{
+    return tdvp_k230_presentation_;
+}
+
 void Renderer::draw_tdvp_k230(const app::RenderState& state)
 {
     if (state.mode == app::AppMode::Playing) {
@@ -136,27 +141,24 @@ void Renderer::draw_tdvp_k230(const app::RenderState& state)
     if (state.mode == app::AppMode::RomBrowser) {
         draw_tdvp_k230_rom_browser(state);
         draw_tdvp_k230_bottom_bar(state);
-        return;
-    }
-
-    if (state.mode == app::AppMode::Error) {
+    } else if (state.mode == app::AppMode::Error) {
         draw_tdvp_k230_error(state);
         draw_tdvp_k230_bottom_bar(state);
-        return;
-    }
+    } else {
+        draw_tdvp_k230_game(state.game_frame);
+        draw_tdvp_k230_side_panels(state.status);
+        draw_tdvp_k230_bottom_bar(state);
+        draw_tdvp_k230_toast(state.status.toast);
 
-    draw_tdvp_k230_game(state.game_frame);
-    draw_tdvp_k230_side_panels(state.status);
-    draw_tdvp_k230_bottom_bar(state);
-    draw_tdvp_k230_toast(state.status.toast);
-
-    if (state.mode == app::AppMode::Paused) {
-        draw_tdvp_k230_overlay("PAUSED", state.selected_pause_item);
-    } else if (state.mode == app::AppMode::CheatMenu) {
-        draw_tdvp_k230_overlay("CHEATS", 0);
-    } else if (state.mode == app::AppMode::Settings) {
-        draw_tdvp_k230_overlay("SETTINGS", 0);
+        if (state.mode == app::AppMode::Paused) {
+            draw_tdvp_k230_overlay("PAUSED", state.selected_pause_item);
+        } else if (state.mode == app::AppMode::CheatMenu) {
+            draw_tdvp_k230_overlay("CHEATS", 0);
+        } else if (state.mode == app::AppMode::Settings) {
+            draw_tdvp_k230_overlay("SETTINGS", 0);
+        }
     }
+    publish_tdvp_static_canvas();
 }
 
 bool Renderer::tdvp_playing_static_cache_matches(const app::RenderState& state) const
@@ -186,19 +188,50 @@ void Renderer::rebuild_tdvp_playing_static_cache(const app::RenderState& state)
     ++tdvp_playing_static_cache_generation_;
 }
 
+void Renderer::publish_tdvp_static_canvas()
+{
+    const auto pixel_count = static_cast<std::size_t>(canvas_.width()) * static_cast<std::size_t>(canvas_.height());
+    const bool changed = tdvp_playing_static_pixels_.size() != pixel_count ||
+        !std::equal(canvas_.data(), canvas_.data() + pixel_count, tdvp_playing_static_pixels_.data());
+    if (changed) {
+        tdvp_playing_static_pixels_.assign(canvas_.data(), canvas_.data() + pixel_count);
+        ++tdvp_playing_static_cache_generation_;
+    }
+    tdvp_k230_presentation_ = {
+        tdvp_playing_static_pixels_.data(),
+        canvas_.width(),
+        canvas_.height(),
+        canvas_.pitch_bytes(),
+        tdvp_playing_static_cache_generation_,
+        nullptr,
+        0,
+        0,
+        0,
+        false,
+    };
+}
+
 void Renderer::draw_tdvp_k230_playing(const app::RenderState& state)
 {
     if (!tdvp_playing_static_cache_matches(state)) {
         rebuild_tdvp_playing_static_cache(state);
-    } else {
-        const auto pixel_count = static_cast<std::size_t>(canvas_.width()) * static_cast<std::size_t>(canvas_.height());
-        std::copy_n(tdvp_playing_static_pixels_.data(), pixel_count, canvas_.data());
     }
 
-    // This is the only visual region that normally changes at 60 Hz. The
-    // Wayland wl_shm presenter recognises the same rectangle and performs the
-    // physical 3x nearest-neighbour write without touching cached chrome.
-    draw_tdvp_k230_game(state.game_frame);
+    const auto* game = state.game_frame;
+    const bool game_frame_available = game != nullptr && game->pixels_xrgb8888 != nullptr &&
+        game->width > 0 && game->height > 0 && game->pitch_pixels >= game->width;
+    tdvp_k230_presentation_ = {
+        tdvp_playing_static_pixels_.data(),
+        canvas_.width(),
+        canvas_.height(),
+        canvas_.pitch_bytes(),
+        tdvp_playing_static_cache_generation_,
+        game_frame_available ? game->pixels_xrgb8888 : nullptr,
+        game_frame_available ? game->width : 0,
+        game_frame_available ? game->height : 0,
+        game_frame_available ? game->pitch_pixels : 0,
+        game_frame_available,
+    };
 }
 
 void Renderer::draw_tdvp_k230_background()

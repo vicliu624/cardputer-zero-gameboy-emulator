@@ -8,6 +8,7 @@
 #include "core/gba_video_frame.hpp"
 #include "render/canvas.hpp"
 #include "render/font_5x7.hpp"
+#include "render/tdvp_k230_presentation.hpp"
 #include "render/utf8_text.hpp"
 
 namespace czgba::render {
@@ -20,12 +21,14 @@ public:
     const Canvas& canvas() const;
     Canvas& canvas();
     std::uint64_t tdvp_playing_static_cache_generation() const;
+    const TdvpK230PresentationFrame& tdvp_k230_presentation() const;
 
 private:
     void draw_tdvp_k230(const app::RenderState& state);
     void draw_tdvp_k230_playing(const app::RenderState& state);
     bool tdvp_playing_static_cache_matches(const app::RenderState& state) const;
     void rebuild_tdvp_playing_static_cache(const app::RenderState& state);
+    void publish_tdvp_static_canvas();
     void draw_tdvp_k230_background();
     void draw_tdvp_k230_game(const core::GbaVideoFrame* frame);
     void draw_tdvp_k230_game_test_pattern();
@@ -72,6 +75,7 @@ private:
     std::string tdvp_cached_toast_;
     bool tdvp_playing_static_cache_valid_ = false;
     std::uint64_t tdvp_playing_static_cache_generation_ = 0;
+    TdvpK230PresentationFrame tdvp_k230_presentation_;
 };
 
 } // namespace czgba::render

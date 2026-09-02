@@ -142,11 +142,15 @@ int main(int argc, char** argv)
         }
 
         renderer.draw(app.render_state());
-        platform.present(
-            renderer.canvas().data(),
-            renderer.canvas().width(),
-            renderer.canvas().height(),
-            renderer.canvas().pitch_bytes());
+        if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230) {
+            platform.present_tdvp_k230(renderer.tdvp_k230_presentation());
+        } else {
+            platform.present(
+                renderer.canvas().data(),
+                renderer.canvas().width(),
+                renderer.canvas().height(),
+                renderer.canvas().pitch_bytes());
+        }
         ++presented_frames;
 
         if (options.max_frames > 0 && presented_frames >= options.max_frames) {

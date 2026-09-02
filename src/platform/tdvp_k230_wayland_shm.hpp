@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <memory>
 
+#include "render/tdvp_k230_presentation.hpp"
+
 struct SDL_Window;
 
 namespace czgba::platform {
@@ -22,7 +24,7 @@ public:
 
     bool init(SDL_Window* window);
     void shutdown();
-    void present(const std::uint32_t* canvas_xrgb8888, int canvas_width, int canvas_height, int pitch_bytes);
+    void present(const render::TdvpK230PresentationFrame& frame);
 
 private:
     std::unique_ptr<TdvpK230WaylandShmState> state_;

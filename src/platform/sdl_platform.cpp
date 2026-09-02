@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "render/layout.hpp"
+#include "render/tdvp_k230_presentation.hpp"
 
 namespace czgba::platform {
 
@@ -192,7 +193,7 @@ void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
         return;
     }
     if (tdvp_k230_wayland_shm_) {
-        tdvp_k230_wayland_shm_->present(canvas_xrgb8888, canvas_width, canvas_height, pitch_bytes);
+        std::cerr << "TDVP K230 presentation requires static chrome and a raw GBA frame\n";
         return;
     }
     SDL_UpdateTexture(texture_, nullptr, canvas_xrgb8888, pitch_bytes);
@@ -217,6 +218,13 @@ void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
         SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
     }
     SDL_RenderPresent(renderer_);
+}
+
+void SdlPlatform::present_tdvp_k230(const render::TdvpK230PresentationFrame& frame)
+{
+    if (tdvp_k230_wayland_shm_) {
+        tdvp_k230_wayland_shm_->present(frame);
+    }
 }
 
 bool SdlPlatform::should_quit() const

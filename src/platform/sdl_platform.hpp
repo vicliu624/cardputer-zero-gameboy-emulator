@@ -13,6 +13,10 @@ struct SDL_Renderer;
 struct SDL_Texture;
 struct SDL_Window;
 
+namespace czgba::render {
+struct TdvpK230PresentationFrame;
+}
+
 namespace czgba::platform {
 
 struct PlatformConfig {
@@ -35,6 +39,7 @@ public:
     void shutdown();
     void poll_events(input::InputFrame& input);
     void present(const std::uint32_t* canvas_xrgb8888, int canvas_width, int canvas_height, int pitch_bytes);
+    void present_tdvp_k230(const render::TdvpK230PresentationFrame& frame);
     bool should_quit() const;
 
 private:

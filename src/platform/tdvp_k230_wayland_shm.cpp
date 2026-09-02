@@ -54,11 +54,8 @@ struct TdvpK230WaylandShmState {
     TdvpK230PresentScheduler scheduler;
     int width = kK230LandscapeWidth;
     int height = kK230LandscapeHeight;
-    std::uint64_t static_generation = 1;
+    std::uint64_t static_generation = 0;
     bool full_damage_pending = true;
-    int static_source_width = 0;
-    int static_source_height = 0;
-    std::vector<std::uint32_t> static_source;
     std::vector<std::uint32_t> static_pixels;
     std::chrono::steady_clock::time_point last_stats_log;
     std::chrono::steady_clock::time_point last_frame_callback;
@@ -233,46 +230,29 @@ void destroy_buffer(State::Buffer& buffer)
     buffer.state = nullptr;
 }
 
-bool is_game_pixel(int x, int y)
+bool scale_static_pixels(State& state, const render::TdvpK230PresentationFrame& frame)
 {
-    using T = render::TdvpK230Layout;
-    return x >= T::GameX && x < T::GameX + T::GameW && y >= T::GameY && y < T::GameY + T::GameH;
-}
-
-bool static_pixels_changed(const State& state, const std::uint32_t* canvas, int width, int height, int stride)
-{
-    if (state.static_source_width != width || state.static_source_height != height ||
-        state.static_source.size() != static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {
-        return true;
+    if (frame.static_pixels_xrgb8888 == nullptr || frame.static_width <= 0 || frame.static_height <= 0 ||
+        frame.static_pitch_bytes <= 0) {
+        return false;
+    }
+    const int source_stride = frame.static_pitch_bytes / static_cast<int>(sizeof(std::uint32_t));
+    if (source_stride < frame.static_width) {
+        return false;
     }
 
-    for (int y = 0; y < height; ++y) {
-        const auto* source_row = canvas + static_cast<std::size_t>(y) * static_cast<std::size_t>(stride);
-        const auto* cached_row = state.static_source.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width);
-        for (int x = 0; x < width; ++x) {
-            if (!is_game_pixel(x, y) && source_row[x] != cached_row[x]) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-void scale_static_pixels(State& state, const std::uint32_t* canvas, int width, int height, int stride)
-{
-    const auto destination = integer_presentation_rect(width, height, state.width, state.height);
+    const auto destination = integer_presentation_rect(
+        frame.static_width, frame.static_height, state.width, state.height);
     if (destination.scale != 3) {
         std::cerr << "TDVP K230 wl_shm: expected 3x integer presentation, got " << destination.scale << "x\n";
-        return;
+        return false;
     }
 
     std::fill(state.static_pixels.begin(), state.static_pixels.end(), 0U);
-    for (int y = 0; y < height; ++y) {
-        const auto* source_row = canvas + static_cast<std::size_t>(y) * static_cast<std::size_t>(stride);
-        for (int x = 0; x < width; ++x) {
-            if (is_game_pixel(x, y)) {
-                continue;
-            }
+    for (int y = 0; y < frame.static_height; ++y) {
+        const auto* source_row = frame.static_pixels_xrgb8888 +
+            static_cast<std::size_t>(y) * static_cast<std::size_t>(source_stride);
+        for (int x = 0; x < frame.static_width; ++x) {
             const auto color = source_row[x];
             const int target_x = destination.x + x * destination.scale;
             const int target_y = destination.y + y * destination.scale;
@@ -283,47 +263,43 @@ void scale_static_pixels(State& state, const std::uint32_t* canvas, int width, i
             }
         }
     }
-
-    state.static_source_width = width;
-    state.static_source_height = height;
-    state.static_source.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
-    for (int y = 0; y < height; ++y) {
-        std::copy_n(
-            canvas + static_cast<std::size_t>(y) * static_cast<std::size_t>(stride),
-            width,
-            state.static_source.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width));
-    }
-    ++state.static_generation;
+    state.static_generation = frame.static_generation;
+    return true;
 }
 
 void scale_game_pixels(
     State& state,
     State::Buffer& buffer,
-    const std::uint32_t* canvas,
-    int canvas_width,
-    int canvas_height,
-    int source_stride)
+    const render::TdvpK230PresentationFrame& frame)
 {
+    if (!frame.game_frame_updated || frame.game_pixels_xrgb8888 == nullptr || frame.game_width <= 0 ||
+        frame.game_height <= 0 || frame.game_pitch_pixels < frame.game_width) {
+        return;
+    }
     using T = render::TdvpK230Layout;
-    const auto destination = integer_presentation_rect(canvas_width, canvas_height, state.width, state.height);
+    const auto destination = integer_presentation_rect(
+        frame.static_width, frame.static_height, state.width, state.height);
     if (destination.scale != 3) {
         return;
     }
 
-    const int game_width = std::min(T::GameW, canvas_width - T::GameX);
-    const int game_height = std::min(T::GameH, canvas_height - T::GameY);
+    const int game_width = std::min(T::GameW, frame.game_width);
+    const int game_height = std::min(T::GameH, frame.game_height);
     if (game_width <= 0 || game_height <= 0) {
         return;
     }
 
+    constexpr std::uint32_t kGameBorder = (22U << 16) | (25U << 8) | 28U;
     for (int y = 0; y < game_height; ++y) {
-        const auto* source = canvas + static_cast<std::size_t>(T::GameY + y) * static_cast<std::size_t>(source_stride) + T::GameX;
+        const auto* source = frame.game_pixels_xrgb8888 +
+            static_cast<std::size_t>(y) * static_cast<std::size_t>(frame.game_pitch_pixels);
         const int target_y = destination.y + (T::GameY + y) * destination.scale;
         const int target_x = destination.x + T::GameX * destination.scale;
         for (int dy = 0; dy < destination.scale; ++dy) {
             auto* target = buffer.pixels + static_cast<std::size_t>(target_y + dy) * static_cast<std::size_t>(state.width) + target_x;
             for (int x = 0; x < game_width; ++x) {
-                std::fill_n(target + x * destination.scale, destination.scale, source[x]);
+                const bool border = x == 0 || y == 0 || x == T::GameW - 1 || y == T::GameH - 1;
+                std::fill_n(target + x * destination.scale, destination.scale, border ? kGameBorder : source[x]);
             }
         }
     }
@@ -440,30 +416,33 @@ void TdvpK230WaylandShm::shutdown()
     state_.reset();
 }
 
-void TdvpK230WaylandShm::present(
-    const std::uint32_t* canvas_xrgb8888,
-    int canvas_width,
-    int canvas_height,
-    int pitch_bytes)
+void TdvpK230WaylandShm::present(const render::TdvpK230PresentationFrame& frame)
 {
 #if defined(CZ_GBA_HAS_TDVP_WAYLAND_SHM)
-    if (!state_ || canvas_xrgb8888 == nullptr || canvas_width <= 0 || canvas_height <= 0 || pitch_bytes <= 0) {
-        return;
-    }
-    const int source_stride = pitch_bytes / static_cast<int>(sizeof(std::uint32_t));
-    if (source_stride < canvas_width) {
+    if (!state_ || frame.static_pixels_xrgb8888 == nullptr || frame.static_width <= 0 ||
+        frame.static_height <= 0 || frame.static_pitch_bytes <= 0) {
         return;
     }
 
     State& state = *state_;
     dispatch_pending_events(state);
-    if (static_pixels_changed(state, canvas_xrgb8888, canvas_width, canvas_height, source_stride)) {
-        scale_static_pixels(state, canvas_xrgb8888, canvas_width, canvas_height, source_stride);
+    const bool static_changed = state.static_generation != frame.static_generation;
+    if (static_changed) {
+        if (!scale_static_pixels(state, frame)) {
+            return;
+        }
         state.full_damage_pending = true;
     }
 
+    if (static_changed || frame.game_frame_updated) {
+        state.scheduler.note_frame_available();
+    }
+    if (!state.scheduler.has_latest_frame()) {
+        maybe_log_present_stats(state);
+        return;
+    }
+
     State::Buffer* buffer = next_available_buffer(state);
-    state.scheduler.note_frame_available();
     if (state.scheduler.try_begin_present(buffer != nullptr) != TdvpK230PresentDecision::Commit) {
         maybe_log_present_stats(state);
         return;
@@ -472,7 +451,7 @@ void TdvpK230WaylandShm::present(
         std::memcpy(buffer->pixels, state.static_pixels.data(), buffer->size);
         buffer->static_generation = state.static_generation;
     }
-    scale_game_pixels(state, *buffer, canvas_xrgb8888, canvas_width, canvas_height, source_stride);
+    scale_game_pixels(state, *buffer, frame);
 
     state.frame_callback = wl_surface_frame(state.surface);
     if (state.frame_callback == nullptr) {
@@ -487,7 +466,8 @@ void TdvpK230WaylandShm::present(
         wl_surface_damage_buffer(state.surface, 0, 0, state.width, state.height);
         state.full_damage_pending = false;
     } else {
-        const auto game = tdvp_k230_game_damage_rect(canvas_width, canvas_height, state.width, state.height);
+        const auto game = tdvp_k230_game_damage_rect(
+            frame.static_width, frame.static_height, state.width, state.height);
         wl_surface_damage_buffer(state.surface, game.x, game.y, game.width, game.height);
     }
     wl_surface_commit(state.surface);
@@ -496,10 +476,7 @@ void TdvpK230WaylandShm::present(
     }
     maybe_log_present_stats(state);
 #else
-    (void)canvas_xrgb8888;
-    (void)canvas_width;
-    (void)canvas_height;
-    (void)pitch_bytes;
+    (void)frame;
 #endif
 }
 
