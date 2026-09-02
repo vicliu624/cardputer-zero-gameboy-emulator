@@ -456,7 +456,7 @@ void TdvpK230WaylandShm::present(const render::TdvpK230PresentationFrame& frame)
     state.frame_callback = wl_surface_frame(state.surface);
     if (state.frame_callback == nullptr) {
         std::cerr << "TDVP K230 wl_shm: wl_surface_frame failed\n";
-        state.scheduler.note_frame_callback();
+        state.scheduler.cancel_pending_present();
         return;
     }
     wl_callback_add_listener(state.frame_callback, &kFrameCallbackListener, &state);
@@ -471,6 +471,7 @@ void TdvpK230WaylandShm::present(const render::TdvpK230PresentationFrame& frame)
         wl_surface_damage_buffer(state.surface, game.x, game.y, game.width, game.height);
     }
     wl_surface_commit(state.surface);
+    state.scheduler.note_present_committed();
     if (wl_display_flush(state.display) < 0 && errno != EAGAIN) {
         log_errno("wl_display_flush");
     }

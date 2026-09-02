@@ -50,8 +50,22 @@ public:
 
         latest_frame_available_ = false;
         frame_callback_pending_ = true;
-        ++stats_.present_committed;
         return TdvpK230PresentDecision::Commit;
+    }
+
+    // Call only after wl_surface_commit(). Reserving a presentation and
+    // submitting one are intentionally distinct: wl_surface_frame() can fail
+    // before a buffer is attached, in which case the newest frame must remain
+    // eligible for a later retry.
+    void note_present_committed()
+    {
+        ++stats_.present_committed;
+    }
+
+    void cancel_pending_present()
+    {
+        frame_callback_pending_ = false;
+        latest_frame_available_ = true;
     }
 
     void note_frame_callback()

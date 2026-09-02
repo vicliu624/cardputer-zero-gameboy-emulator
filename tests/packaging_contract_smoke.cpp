@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -19,7 +20,12 @@ std::string read_file(const std::filesystem::path& path)
     }
     std::ostringstream buffer;
     buffer << file.rdbuf();
-    return buffer.str();
+    auto contents = buffer.str();
+    // The feed is also built from Windows worktrees through WSL. Normalize
+    // checked-out CRLF source text so source-contract assertions describe C++
+    // semantics rather than the host Git end-of-line policy.
+    contents.erase(std::remove(contents.begin(), contents.end(), '\r'), contents.end());
+    return contents;
 }
 
 bool contains(const std::string& haystack, const std::string& needle)
@@ -128,8 +134,16 @@ int main()
     require(!contains(sdl_platform, "SDL_RENDERER_PRESENTVSYNC"), "renderer vsync removed");
     require(contains(tdvp_shm, "wl_shm_create_pool"), "TDVP creates direct Wayland shared-memory pools");
     require(contains(tdvp_shm, "wl_surface_attach"), "TDVP attaches shared-memory buffers directly to Wayland");
+    require(contains(tdvp_shm, "wl_surface_frame"), "TDVP paces presentation with compositor frame callbacks");
+    require(contains(tdvp_shm, "wl_surface_damage_buffer"), "TDVP uses buffer-space damage for wl_shm presentation");
+    require(!contains(tdvp_shm, "while (wl_display_dispatch("),
+            "TDVP never blocks emulation waiting for a compositor-owned buffer");
+    require(contains(tdvp_shm, "cancel_pending_present"),
+            "TDVP retains the latest frame when a presentation reservation fails");
     require(contains(tdvp_shm, "scale_game_pixels"), "TDVP does dedicated nearest-neighbour game scaling");
     require(contains(tdvp_shm, "static_generation"), "TDVP caches static scaled UI buffers");
+    require(contains(renderer, "TdvpK230PresentationFrame"),
+            "renderer exposes separate static chrome and dynamic GBA presentation data");
     require(contains(renderer, "{0, 79}"), "bottom slot 1");
     require(contains(renderer, "{79, 54}"), "bottom slot 2");
     require(contains(renderer, "{133, 54}"), "bottom slot 3");
