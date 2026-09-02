@@ -3,6 +3,7 @@
 #include <SDL.h>
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 
@@ -24,6 +25,7 @@
 #include <vector>
 
 #include "platform/presentation_profile.hpp"
+#include "platform/tdvp_k230_present_scheduler.hpp"
 #include "render/layout.hpp"
 #endif
 
@@ -32,6 +34,7 @@ namespace czgba::platform {
 struct TdvpK230WaylandShmState {
 #if defined(CZ_GBA_HAS_TDVP_WAYLAND_SHM)
     struct Buffer {
+        TdvpK230WaylandShmState* state = nullptr;
         int fd = -1;
         std::uint32_t* pixels = nullptr;
         std::size_t size = 0;
@@ -45,7 +48,9 @@ struct TdvpK230WaylandShmState {
     wl_surface* surface = nullptr; // SDL owns the xdg surface role.
     wl_registry* registry = nullptr;
     wl_shm* shm = nullptr;
+    wl_callback* frame_callback = nullptr;
     std::array<Buffer, 3> buffers{};
+    TdvpK230PresentScheduler scheduler;
     int width = kK230LandscapeWidth;
     int height = kK230LandscapeHeight;
     std::uint64_t static_generation = 1;
@@ -53,6 +58,9 @@ struct TdvpK230WaylandShmState {
     int static_source_height = 0;
     std::vector<std::uint32_t> static_source;
     std::vector<std::uint32_t> static_pixels;
+    std::chrono::steady_clock::time_point last_stats_log;
+    std::chrono::steady_clock::time_point last_frame_callback;
+    double last_frame_callback_interval_ms = 0.0;
 #endif
 };
 
@@ -85,12 +93,64 @@ constexpr wl_registry_listener kRegistryListener{
 
 void buffer_release(void* data, wl_buffer*)
 {
-    static_cast<State::Buffer*>(data)->busy = false;
+    auto& buffer = *static_cast<State::Buffer*>(data);
+    buffer.busy = false;
+    if (buffer.state != nullptr) {
+        buffer.state->scheduler.note_buffer_release();
+    }
 }
 
 constexpr wl_buffer_listener kBufferListener{
     buffer_release,
 };
+
+void frame_callback_done(void* data, wl_callback* callback, std::uint32_t)
+{
+    auto& state = *static_cast<State*>(data);
+    if (state.frame_callback == callback) {
+        state.frame_callback = nullptr;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (state.last_frame_callback.time_since_epoch().count() != 0) {
+        state.last_frame_callback_interval_ms =
+            std::chrono::duration<double, std::milli>(now - state.last_frame_callback).count();
+    }
+    state.last_frame_callback = now;
+    state.scheduler.note_frame_callback();
+    wl_callback_destroy(callback);
+}
+
+constexpr wl_callback_listener kFrameCallbackListener{
+    frame_callback_done,
+};
+
+bool frame_timing_enabled()
+{
+    const char* value = std::getenv("CARDPUTER_ZERO_GBA_FRAME_TIMING");
+    return value != nullptr && value[0] == '1' && value[1] == '\0';
+}
+
+void maybe_log_present_stats(State& state)
+{
+    if (!frame_timing_enabled()) {
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (state.last_stats_log.time_since_epoch().count() != 0 &&
+        now - state.last_stats_log < std::chrono::seconds(1)) {
+        return;
+    }
+    state.last_stats_log = now;
+    const auto& stats = state.scheduler.stats();
+    std::cerr << "TDVP K230 frame timing: requested=" << stats.present_requested
+              << " committed=" << stats.present_committed
+              << " skipped_callback=" << stats.present_skipped_frame_callback
+              << " skipped_no_buffer=" << stats.present_skipped_no_buffer
+              << " callbacks=" << stats.frame_callbacks
+              << " releases=" << stats.buffer_releases
+              << " callback_interval_ms=" << state.last_frame_callback_interval_ms
+              << '\n';
+}
 
 int create_shared_memory_file(std::size_t size)
 {
@@ -111,6 +171,7 @@ int create_shared_memory_file(std::size_t size)
 
 bool create_buffer(State& state, State::Buffer& buffer)
 {
+    buffer.state = &state;
     const int stride = state.width * static_cast<int>(sizeof(std::uint32_t));
     buffer.size = static_cast<std::size_t>(stride) * static_cast<std::size_t>(state.height);
     buffer.fd = create_shared_memory_file(buffer.size);
@@ -167,6 +228,7 @@ void destroy_buffer(State::Buffer& buffer)
     buffer.size = 0;
     buffer.busy = false;
     buffer.static_generation = 0;
+    buffer.state = nullptr;
 }
 
 bool is_game_pixel(int x, int y)
@@ -267,23 +329,22 @@ void scale_game_pixels(
 
 State::Buffer* next_available_buffer(State& state)
 {
-    wl_display_dispatch_pending(state.display);
     for (auto& buffer : state.buffers) {
         if (!buffer.busy) {
             return &buffer;
         }
     }
-
-    // Back-pressure from the compositor is preferable to overwriting a buffer
-    // that labwc is still scanning out.
-    while (wl_display_dispatch(state.display) >= 0) {
-        for (auto& buffer : state.buffers) {
-            if (!buffer.busy) {
-                return &buffer;
-            }
-        }
-    }
     return nullptr;
+}
+
+void dispatch_pending_events(State& state)
+{
+    // SDL owns the connection and continues to drive keyboard/window events.
+    // Draining only already-queued Wayland events lets buffer releases and
+    // frame callbacks advance without ever blocking the emulation thread.
+    if (wl_display_dispatch_pending(state.display) < 0) {
+        std::cerr << "TDVP K230 wl_shm: compositor connection closed\n";
+    }
 }
 
 } // namespace
@@ -316,6 +377,7 @@ bool TdvpK230WaylandShm::init(SDL_Window* window)
     auto state = std::make_unique<TdvpK230WaylandShmState>();
     state->display = info.info.wl.display;
     state->surface = info.info.wl.surface;
+    state->last_stats_log = std::chrono::steady_clock::now();
     state->static_pixels.resize(static_cast<std::size_t>(state->width) * static_cast<std::size_t>(state->height));
     state->registry = wl_display_get_registry(state->display);
     if (state->registry == nullptr) {
@@ -356,6 +418,10 @@ void TdvpK230WaylandShm::shutdown()
 {
 #if defined(CZ_GBA_HAS_TDVP_WAYLAND_SHM)
     if (state_) {
+        if (state_->frame_callback != nullptr) {
+            wl_callback_destroy(state_->frame_callback);
+            state_->frame_callback = nullptr;
+        }
         for (auto& buffer : state_->buffers) {
             destroy_buffer(buffer);
         }
@@ -388,13 +454,15 @@ void TdvpK230WaylandShm::present(
     }
 
     State& state = *state_;
+    dispatch_pending_events(state);
     if (static_pixels_changed(state, canvas_xrgb8888, canvas_width, canvas_height, source_stride)) {
         scale_static_pixels(state, canvas_xrgb8888, canvas_width, canvas_height, source_stride);
     }
 
     State::Buffer* buffer = next_available_buffer(state);
-    if (buffer == nullptr) {
-        std::cerr << "TDVP K230 wl_shm: compositor connection closed\n";
+    state.scheduler.note_frame_available();
+    if (state.scheduler.try_begin_present(buffer != nullptr) != TdvpK230PresentDecision::Commit) {
+        maybe_log_present_stats(state);
         return;
     }
     if (buffer->static_generation != state.static_generation) {
@@ -403,6 +471,13 @@ void TdvpK230WaylandShm::present(
     }
     scale_game_pixels(state, *buffer, canvas_xrgb8888, canvas_width, canvas_height, source_stride);
 
+    state.frame_callback = wl_surface_frame(state.surface);
+    if (state.frame_callback == nullptr) {
+        std::cerr << "TDVP K230 wl_shm: wl_surface_frame failed\n";
+        state.scheduler.note_frame_callback();
+        return;
+    }
+    wl_callback_add_listener(state.frame_callback, &kFrameCallbackListener, &state);
     buffer->busy = true;
     wl_surface_attach(state.surface, buffer->buffer, 0, 0);
     wl_surface_damage(state.surface, 0, 0, state.width, state.height);
@@ -410,6 +485,7 @@ void TdvpK230WaylandShm::present(
     if (wl_display_flush(state.display) < 0 && errno != EAGAIN) {
         log_errno("wl_display_flush");
     }
+    maybe_log_present_stats(state);
 #else
     (void)canvas_xrgb8888;
     (void)canvas_width;
