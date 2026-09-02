@@ -24,8 +24,10 @@ option(CZ_GBA_PREFER_BUNDLED_SDL2 "Build bundled SDL2 before searching the targe
 option(CZ_GBA_SDL_SHARED "Build bundled SDL2 as a shared library" ON)
 option(CZ_GBA_SDL_STATIC "Build bundled SDL2 as a static library" OFF)
 option(CZ_GBA_REQUIRE_K230_DRM "Fail configuration unless Linux DRM/KMS UAPI headers are available" OFF)
-option(CZ_GBA_REQUIRE_K230_WAYLAND_SHM "Fail configuration unless the K230 Wayland wl_shm client ABI is available" OFF)
+option(CZ_GBA_REQUIRE_K230_WAYLAND_SHM "Fail configuration unless the K230 Wayland small-source presenter ABI is available" OFF)
 set(CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY "" CACHE PATH "Firmware-matched TDVP Wayland client development overlay")
+set(CZ_GBA_TDVP_WAYLAND_SCANNER "" CACHE FILEPATH "Firmware-matched host wayland-scanner executable")
+set(CZ_GBA_TDVP_WAYLAND_PROTOCOLS_DIR "" CACHE PATH "Firmware-matched wayland-protocols source directory")
 option(CZ_GBA_USE_SYSTEM_MGBA "Use system libmgba instead of bundled mGBA" OFF)
 option(CZ_GBA_BUNDLE_MGBA "Build bundled mGBA from extern/mgba" ON)
 set(CZ_GBA_MGBA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/mgba" CACHE PATH "mGBA source checkout")
@@ -301,7 +303,9 @@ target_include_directories(cardputer-zero-gba
 set(CZ_GBA_HAS_DRM_KMS OFF)
 if (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Buildroot)$")
     find_path(CZ_GBA_DRM_UAPI_INCLUDE_DIR NAMES drm/drm.h)
-    if (CZ_GBA_DRM_UAPI_INCLUDE_DIR)
+    find_file(CZ_GBA_DRM_FOURCC_HEADER NAMES drm/drm_fourcc.h
+        HINTS "${CZ_GBA_DRM_UAPI_INCLUDE_DIR}")
+    if (CZ_GBA_DRM_UAPI_INCLUDE_DIR AND CZ_GBA_DRM_FOURCC_HEADER)
         set(CZ_GBA_HAS_DRM_KMS ON)
         target_include_directories(cardputer-zero-gba SYSTEM PRIVATE "${CZ_GBA_DRM_UAPI_INCLUDE_DIR}")
         target_compile_definitions(cardputer-zero-gba PRIVATE CZ_GBA_HAS_DRM_KMS=1)
@@ -313,6 +317,7 @@ if (CZ_GBA_REQUIRE_K230_DRM AND NOT CZ_GBA_HAS_DRM_KMS)
 endif()
 
 set(CZ_GBA_HAS_TDVP_WAYLAND_SHM OFF)
+set(CZ_GBA_HAS_TDVP_WAYLAND_PRESENTER OFF)
 if (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Buildroot)$")
     set(CZ_GBA_WAYLAND_HINTS)
     if (CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY)
@@ -335,11 +340,56 @@ if (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Buildroot)$")
         target_include_directories(cardputer-zero-gba SYSTEM PRIVATE "${CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR}")
         target_link_libraries(cardputer-zero-gba PRIVATE "${CZ_GBA_WAYLAND_CLIENT_LIBRARY}" "${CZ_GBA_FFI_LIBRARY}")
         target_compile_definitions(cardputer-zero-gba PRIVATE CZ_GBA_HAS_TDVP_WAYLAND_SHM=1)
+
+        set(CZ_GBA_WAYLAND_SCANNER_EXECUTABLE "${CZ_GBA_TDVP_WAYLAND_SCANNER}")
+        if (NOT CZ_GBA_WAYLAND_SCANNER_EXECUTABLE)
+            find_program(CZ_GBA_WAYLAND_SCANNER_EXECUTABLE NAMES wayland-scanner NO_CMAKE_FIND_ROOT_PATH)
+        endif()
+        find_file(CZ_GBA_VIEWPORTER_PROTOCOL_XML
+            NAMES viewporter.xml
+            HINTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/SDL/wayland-protocols"
+            NO_CMAKE_FIND_ROOT_PATH)
+        find_file(CZ_GBA_LINUX_DMABUF_PROTOCOL_XML
+            NAMES linux-dmabuf-unstable-v1.xml
+            HINTS "${CZ_GBA_TDVP_WAYLAND_PROTOCOLS_DIR}"
+            PATH_SUFFIXES unstable/linux-dmabuf
+            NO_CMAKE_FIND_ROOT_PATH)
+        if (CZ_GBA_WAYLAND_SCANNER_EXECUTABLE AND CZ_GBA_VIEWPORTER_PROTOCOL_XML AND CZ_GBA_LINUX_DMABUF_PROTOCOL_XML)
+            set(CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/tdvp-wayland-protocols")
+            set(CZ_GBA_TDVP_PROTOCOL_SOURCES
+                "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/viewporter-client-protocol.c"
+                "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/linux-dmabuf-unstable-v1-client-protocol.c")
+            set(CZ_GBA_TDVP_PROTOCOL_HEADERS
+                "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/viewporter-client-protocol.h"
+                "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/linux-dmabuf-unstable-v1-client-protocol.h")
+            add_custom_command(
+                OUTPUT ${CZ_GBA_TDVP_PROTOCOL_SOURCES} ${CZ_GBA_TDVP_PROTOCOL_HEADERS}
+                COMMAND "${CMAKE_COMMAND}" -E make_directory "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}"
+                COMMAND "${CZ_GBA_WAYLAND_SCANNER_EXECUTABLE}" client-header
+                    "${CZ_GBA_VIEWPORTER_PROTOCOL_XML}"
+                    "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/viewporter-client-protocol.h"
+                COMMAND "${CZ_GBA_WAYLAND_SCANNER_EXECUTABLE}" private-code
+                    "${CZ_GBA_VIEWPORTER_PROTOCOL_XML}"
+                    "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/viewporter-client-protocol.c"
+                COMMAND "${CZ_GBA_WAYLAND_SCANNER_EXECUTABLE}" client-header
+                    "${CZ_GBA_LINUX_DMABUF_PROTOCOL_XML}"
+                    "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/linux-dmabuf-unstable-v1-client-protocol.h"
+                COMMAND "${CZ_GBA_WAYLAND_SCANNER_EXECUTABLE}" private-code
+                    "${CZ_GBA_LINUX_DMABUF_PROTOCOL_XML}"
+                    "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}/linux-dmabuf-unstable-v1-client-protocol.c"
+                DEPENDS "${CZ_GBA_VIEWPORTER_PROTOCOL_XML}" "${CZ_GBA_LINUX_DMABUF_PROTOCOL_XML}"
+                VERBATIM)
+            target_sources(cardputer-zero-gba PRIVATE ${CZ_GBA_TDVP_PROTOCOL_SOURCES})
+            target_include_directories(cardputer-zero-gba PRIVATE "${CZ_GBA_TDVP_PROTOCOL_GENERATED_DIR}")
+            target_compile_definitions(cardputer-zero-gba PRIVATE CZ_GBA_HAS_TDVP_WAYLAND_PRESENTER=1)
+            set(CZ_GBA_HAS_TDVP_WAYLAND_PRESENTER ON)
+        endif()
     endif()
 endif()
 
-if (CZ_GBA_REQUIRE_K230_WAYLAND_SHM AND NOT CZ_GBA_HAS_TDVP_WAYLAND_SHM)
-    message(FATAL_ERROR "TDVP K230 packaging requires the firmware-matched Wayland wl_shm client ABI")
+if (CZ_GBA_REQUIRE_K230_WAYLAND_SHM AND NOT CZ_GBA_HAS_TDVP_WAYLAND_PRESENTER)
+    message(FATAL_ERROR
+        "TDVP K230 packaging requires the firmware-matched Wayland client ABI, wayland-scanner, viewporter.xml, and linux-dmabuf-unstable-v1.xml")
 endif()
 
 target_include_directories(cardputer-zero-gba-audio-core-smoke

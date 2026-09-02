@@ -47,13 +47,18 @@ fullscreen testing. `--scale 1` is accepted only as a compatibility option.
 The same frontend also has a TDVP K230 presentation profile for the
 Buildroot 2025.02.1 `riscv64-lp64d` platform. Its physical panel runs in
 landscape at 1232x568. K230 uses its own 410x189 application layout: a native
-240x160 GBA frame is placed between expanded information/control rails and
-presented through CPU-owned XRGB `wl_shm` buffers to the labwc Wayland
-compositor at a 3x integer scale. The resulting game viewport is 720x480
-physical pixels, and the full application canvas occupies 1230x567 at `(1,0)`
-on the landscape output. Labwc retains DRM/KMS CRTC ownership and the panel
-transform; SDL supplies the Wayland window and input only. The K230 profile
-does not use SDL_Renderer, EGL, OpenGL ES, fbdev, or direct modesetting.
+240x160 GBA frame is placed between expanded information/control rails and is
+written as a small CPU XRGB source. When the compositor advertises linear
+XRGB Linux DMA-BUF import, the application exports three DRM dumb buffers and
+submits them directly; otherwise it retains three equally small `wl_shm`
+buffers as the compatibility path. The application never CPU-scales the
+canvas. `wp_viewporter` requests the 1230x567, 3x destination at `(1,0)`, so
+the game damage rectangle is only 720x480 for ordinary frames. Labwc retains
+DRM/KMS CRTC ownership and the panel transform; SDL supplies the Wayland
+window and input only. The K230 profile does not use SDL_Renderer, EGL,
+OpenGL ES, fbdev, or direct modesetting. Pixel-perfect nearest-neighbour
+filtering remains a compositor policy: the TDVP VGLite compositor must select
+nearest for this exact integer-scale surface.
 Audio uses SDL's PulseAudio backend on the TDVP desktop, with ALSA compiled as
 a dynamic fallback. An emulation worker owns mGBA and writes whole S16 stereo
 batches into a preallocated single-producer/single-consumer PCM ring; SDL's
@@ -92,7 +97,9 @@ For a TDVP feed build, configure the source explicitly as a composable leaf:
 cmake -S . -B build-tdvp \
   -DCZ_GBA_TDVP_COMPOSABLE_FEED=ON \
   -DCZ_GBA_SDL2_ROOT=/release-staging/sdl2 \
-  -DCZ_GBA_MGBA_ROOT=/release-staging/libmgba
+  -DCZ_GBA_MGBA_ROOT=/release-staging/libmgba \
+  -DCZ_GBA_TDVP_WAYLAND_SCANNER=/matching-buildroot-output/host/bin/wayland-scanner \
+  -DCZ_GBA_TDVP_WAYLAND_PROTOCOLS_DIR=/matching-buildroot-output/build/wayland-protocols-<version>
 ```
 
 That mode rejects missing release-local prefixes and disables FetchContent,

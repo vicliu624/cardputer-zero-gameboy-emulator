@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 #include <sstream>
 #include <string>
 
@@ -19,7 +20,12 @@ std::string read_file(const std::filesystem::path& path)
     }
     std::ostringstream buffer;
     buffer << file.rdbuf();
-    return buffer.str();
+    auto contents = buffer.str();
+    // A source checkout can legitimately retain CRLF on Windows while CI
+    // checks it out as LF. Contract assertions inspect source tokens rather
+    // than line-ending policy, so compare a normalized text view.
+    contents.erase(std::remove(contents.begin(), contents.end(), '\r'), contents.end());
+    return contents;
 }
 
 bool contains(const std::string& haystack, const std::string& needle)
@@ -136,13 +142,18 @@ int main()
     require(contains(sdl_platform, "SDL_RENDERER_ACCELERATED"), "Cardputer Zero keeps its SDL renderer");
     require(contains(sdl_platform, "PresentationProfile::TdvpK230"), "TDVP presentation profile");
     require(contains(sdl_platform, "tdvp_direct_drm_requested"), "TDVP direct DRM is opt-in only");
-    require(contains(sdl_platform, "TdvpK230WaylandShm"), "TDVP defaults to direct wl_shm presentation");
+    require(contains(sdl_platform, "TdvpK230WaylandShm"), "TDVP defaults to direct small-source Wayland presentation");
     require(contains(sdl_platform, "SDL_AUDIODEVICEREMOVED"), "SDL device removal is passed to the recovery controller");
     require(contains(sdl_platform, "refusing software GLES fallback"), "TDVP refuses software GLES fallback");
     require(!contains(sdl_platform, "SDL_RENDERER_PRESENTVSYNC"), "renderer vsync removed");
-    require(contains(tdvp_shm, "wl_shm_create_pool"), "TDVP creates direct Wayland shared-memory pools");
-    require(contains(tdvp_shm, "wl_surface_attach"), "TDVP attaches shared-memory buffers directly to Wayland");
-    require(contains(tdvp_shm, "scale_game_pixels"), "TDVP does dedicated nearest-neighbour game scaling");
+    require(contains(tdvp_shm, "wl_shm_create_pool"), "TDVP retains a small direct Wayland shared-memory fallback");
+    require(contains(tdvp_shm, "zwp_linux_buffer_params_v1_create_immed"), "TDVP can submit linear DMA-BUF buffers to Wayland");
+    require(contains(tdvp_shm, "DRM_IOCTL_PRIME_HANDLE_TO_FD"), "TDVP exports DRM dumb buffers as DMA-BUFs");
+    require(contains(tdvp_shm, "wp_viewport_set_destination"), "TDVP delegates 3x scaling to the Wayland compositor");
+    require(contains(tdvp_shm, "wl_surface_attach"), "TDVP attaches small buffers directly to Wayland");
+    require(contains(tdvp_shm, "copy_game_pixels"), "TDVP copies only the native game region per frame");
+    require(!contains(tdvp_shm, "scale_game_pixels"), "TDVP no longer CPU-scales game pixels");
+    require(contains(tdvp_shm, "T::GameW * state.destination.scale"), "TDVP damages only the scaled game rectangle");
     require(contains(tdvp_shm, "static_generation"), "TDVP caches static scaled UI buffers");
     require(!contains(tdvp_shm, "while (wl_display_dispatch"), "TDVP does not block audio-sensitive UI work on buffer release");
     require(contains(renderer, "{0, 79}"), "bottom slot 1");
@@ -178,6 +189,8 @@ int main()
             "TDVP composable mode disables bundled mGBA");
     require(contains(cmake, "CZ_GBA_REQUIRE_K230_DRM"), "K230 package can require DRM/KMS UAPI headers");
     require(contains(cmake, "CZ_GBA_REQUIRE_K230_WAYLAND_SHM"), "K230 package requires Wayland shared-memory client ABI");
+    require(contains(cmake, "CZ_GBA_TDVP_WAYLAND_SCANNER"), "K230 package generates firmware-matched Wayland protocol bindings");
+    require(contains(cmake, "linux-dmabuf-unstable-v1.xml"), "K230 package requires the linux-dmabuf protocol definition");
     const auto tdvp_drm = read_file(root / "src" / "platform" / "tdvp_k230_drm.cpp");
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_CREATE_DUMB"), "TDVP creates native KMS dumb buffers");
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_SETCRTC"), "TDVP programs a KMS CRTC");

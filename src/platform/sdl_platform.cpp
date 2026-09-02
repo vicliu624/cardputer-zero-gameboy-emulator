@@ -45,7 +45,7 @@ bool SdlPlatform::init(const PlatformConfig& config)
         // Labwc owns DRM master on the supported device. Its Wayland client
         // path remains backed by DRM/KMS, but prevents an application from
         // modesetting the system compositor's CRTC.
-        std::cout << "TDVP K230: using the SDL Wayland client presentation path\n";
+        std::cout << "TDVP K230: using the SDL Wayland small-source presentation path\n";
     }
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
@@ -94,7 +94,7 @@ bool SdlPlatform::init(const PlatformConfig& config)
     if (presentation_profile_ == PresentationProfile::TdvpK230) {
         auto shm = std::make_unique<TdvpK230WaylandShm>();
         if (!shm->init(window_)) {
-            std::cerr << "TDVP K230 wl_shm presentation unavailable; refusing software GLES fallback\n";
+            std::cerr << "TDVP K230 Wayland small-source presentation unavailable; refusing software GLES fallback\n";
             shutdown();
             return false;
         }
