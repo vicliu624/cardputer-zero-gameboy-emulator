@@ -42,6 +42,7 @@ public:
     void wait_until(std::chrono::steady_clock::time_point deadline);
     void present(const std::uint32_t* canvas_xrgb8888, int canvas_width, int canvas_height, int pitch_bytes);
     void present_tdvp_k230(const render::TdvpK230PresentationFrame& frame);
+    bool can_accept_tdvp_k230_present() const;
     bool should_quit() const;
 
 private:

@@ -6,7 +6,6 @@ namespace czgba::platform {
 
 enum class TdvpK230PresentDecision {
     NoFrame,
-    WaitForFrameCallback,
     NoFreeBuffer,
     Commit,
 };
@@ -14,18 +13,19 @@ enum class TdvpK230PresentDecision {
 struct TdvpK230PresentStats {
     std::uint64_t present_requested = 0;
     std::uint64_t present_committed = 0;
-    std::uint64_t present_skipped_frame_callback = 0;
     std::uint64_t present_skipped_no_buffer = 0;
-    std::uint64_t frame_callbacks = 0;
     std::uint64_t buffer_releases = 0;
 };
 
 // Video presentation deliberately has a different policy than emulation. The
 // main loop may keep producing the newest GBA frame at 59.7275 Hz, but this
-// scheduler permits at most one outstanding Wayland frame callback and never
-// waits for a compositor-owned wl_buffer. If the compositor falls behind,
-// outdated video frames are replaced by the newest one instead of delaying
-// emulation, audio, or input.
+// scheduler never waits for a compositor-owned wl_buffer or for a
+// wl_surface.frame callback.  The latter is a presentation hint, not a buffer
+// lifetime guarantee, and the K230 VGLite compositor can deliver it at a much
+// lower and irregular rate.  A wl_buffer becomes writable only after its
+// release event, which is the actual safety boundary for shared memory.
+// If the compositor falls behind, outdated video frames are replaced by the
+// newest one instead of delaying emulation, audio, or input.
 class TdvpK230PresentScheduler {
 public:
     void note_frame_available()
@@ -39,39 +39,26 @@ public:
         if (!latest_frame_available_) {
             return TdvpK230PresentDecision::NoFrame;
         }
-        if (frame_callback_pending_) {
-            ++stats_.present_skipped_frame_callback;
-            return TdvpK230PresentDecision::WaitForFrameCallback;
-        }
         if (!has_free_buffer) {
             ++stats_.present_skipped_no_buffer;
             return TdvpK230PresentDecision::NoFreeBuffer;
         }
 
         latest_frame_available_ = false;
-        frame_callback_pending_ = true;
         return TdvpK230PresentDecision::Commit;
     }
 
     // Call only after wl_surface_commit(). Reserving a presentation and
-    // submitting one are intentionally distinct: wl_surface_frame() can fail
-    // before a buffer is attached, in which case the newest frame must remain
-    // eligible for a later retry.
+    // submitting one are intentionally distinct so validation failures can
+    // retain the newest frame for the next free wl_buffer.
     void note_present_committed()
     {
         ++stats_.present_committed;
     }
 
-    void cancel_pending_present()
+    void retry_latest_frame()
     {
-        frame_callback_pending_ = false;
         latest_frame_available_ = true;
-    }
-
-    void note_frame_callback()
-    {
-        frame_callback_pending_ = false;
-        ++stats_.frame_callbacks;
     }
 
     void note_buffer_release()
@@ -84,11 +71,6 @@ public:
         return latest_frame_available_;
     }
 
-    bool frame_callback_pending() const
-    {
-        return frame_callback_pending_;
-    }
-
     const TdvpK230PresentStats& stats() const
     {
         return stats_;
@@ -97,7 +79,6 @@ public:
 private:
     TdvpK230PresentStats stats_;
     bool latest_frame_available_ = false;
-    bool frame_callback_pending_ = false;
 };
 
 } // namespace czgba::platform

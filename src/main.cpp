@@ -200,14 +200,19 @@ int main(int argc, char** argv)
             app.read_audio_samples(48000, kAudioMaxFramesPerTick);
         }
 
-        // Presentation has its own Wayland-controlled drop policy. Rendering
-        // the lightweight TDVP frame descriptor every emulation tick keeps
-        // state transitions responsive; the presenter alone chooses whether
-        // a child-surface wl_shm commit is currently eligible.
-        renderer.draw(app.render_state());
-        if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230) {
+        // On TDVP, skip renderer work while all compositor-owned wl_shm
+        // buffers are busy. The emulation/audio timeline still advances and
+        // the next free buffer receives the newest core frame. This prevents a
+        // stalled VGLite composition pass from consuming the CPU budget needed
+        // to keep PulseAudio supplied.
+        const bool tdvp_present_ready = presentation_profile != czgba::platform::PresentationProfile::TdvpK230 ||
+            platform.can_accept_tdvp_k230_present();
+        if (tdvp_present_ready) {
+            renderer.draw(app.render_state());
+        }
+        if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230 && tdvp_present_ready) {
             platform.present_tdvp_k230(renderer.tdvp_k230_presentation());
-        } else {
+        } else if (presentation_profile != czgba::platform::PresentationProfile::TdvpK230) {
             platform.present(
                 renderer.canvas().data(),
                 renderer.canvas().width(),

@@ -13,7 +13,7 @@ video format.
 | --- | --- |
 | Emulator core | mGBA continues to produce an unmodified 240x160 GBA frame. Game coordinates and input semantics do not change. |
 | Application layout | Cardputer Zero keeps its 320x170 layout. TDVP K230 gets its own 410x189 layout, with larger information and command regions. |
-| Physical presentation | The user-visible UI coordinate system is 1232x568 landscape. Labwc owns the verified RM69A10 connector's 568x1232 native DRM scanout and panel transform. The application owns a standard native Wayland `xdg_toplevel`, its client event queue, and `wl_seat` keyboard. Static XRGB `wl_shm` chrome is committed on that root surface only when it changes; the game rectangle is a desynchronised child `wl_subsurface` at `(256,9)`, copied at 3x nearest-neighbour scaling to 720x480 with three buffers. |
+| Physical presentation | The user-visible UI coordinate system is 1232x568 landscape. Labwc owns the verified RM69A10 connector's 568x1232 native DRM scanout and panel transform. The application owns one standard native Wayland `xdg_toplevel`, its client event queue, and `wl_seat` keyboard. Three full-output XRGB `wl_shm` buffers cache static chrome per generation; routine commits overwrite and damage only the `(256,9) 720x480` game rectangle at 3x nearest-neighbour scale, and reuse buffers only after `wl_buffer.release`. |
 | Device system UI | Firmware shell chrome is owned by the device shell, not this application, and is not reproduced by the emulator. |
 | Release boundary | The package remains `tdvp-cardputer-zero-gba` for `tdvp-k230-br2025.02.1-glibc2.33-rv64-lp64d-k6.6.36-r1`. |
 

@@ -248,6 +248,11 @@ void SdlPlatform::present_tdvp_k230(const render::TdvpK230PresentationFrame& fra
     }
 }
 
+bool SdlPlatform::can_accept_tdvp_k230_present() const
+{
+    return tdvp_k230_wayland_shm_ && tdvp_k230_wayland_shm_->can_accept_present();
+}
+
 bool SdlPlatform::should_quit() const
 {
     return should_quit_ || (tdvp_k230_wayland_shm_ && tdvp_k230_wayland_shm_->should_quit());

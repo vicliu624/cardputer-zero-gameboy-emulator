@@ -134,7 +134,8 @@ int main()
     require(!contains(sdl_platform, "SDL_RENDERER_PRESENTVSYNC"), "renderer vsync removed");
     require(contains(tdvp_shm, "wl_shm_create_pool"), "TDVP creates direct Wayland shared-memory pools");
     require(contains(tdvp_shm, "wl_surface_attach"), "TDVP attaches shared-memory buffers directly to Wayland");
-    require(contains(tdvp_shm, "wl_surface_frame"), "TDVP paces presentation with compositor frame callbacks");
+    require(contains(tdvp_shm, "wl_buffer_add_listener"),
+            "TDVP tracks compositor ownership through wl_buffer release events");
     require(contains(tdvp_shm, "wl_surface_damage_buffer"), "TDVP uses buffer-space damage for wl_shm presentation");
     require(!contains(tdvp_shm, "while (wl_display_dispatch("),
             "TDVP never blocks emulation waiting for a compositor-owned buffer");
@@ -144,24 +145,26 @@ int main()
             "TDVP owns its native Wayland display connection");
     require(contains(tdvp_shm, "xdg_wm_base_get_xdg_surface"),
             "TDVP uses a standard xdg toplevel root surface");
-    require(contains(tdvp_shm, "wl_subcompositor_get_subsurface"),
-            "TDVP puts the dynamic GBA viewport in a child subsurface");
-    require(contains(tdvp_shm, "wl_subsurface_set_desync"),
-            "TDVP child surface does not wait for static root commits");
-    require(!contains(tdvp_shm, "wl_subsurface_place_above(state.game_subsurface"),
-            "TDVP never passes its parent surface where Wayland requires a sibling subsurface");
-    require(contains(tdvp_shm, "state.game_surface, 0, 0, state.game_geometry.width"),
-            "normal game damage is child-local rather than full-output damage");
+    require(!contains(tdvp_shm, "wl_subcompositor_get_subsurface"),
+            "TDVP avoids a child subsurface transaction for its dynamic viewport");
+    require(!contains(tdvp_shm, "wl_surface_frame("),
+            "TDVP does not make shared-memory buffer reuse depend on frame callbacks");
+    require(contains(tdvp_shm, "pacer=wl_buffer.release"),
+            "TDVP telemetry identifies wl_buffer.release as the presentation safety boundary");
+    require(contains(tdvp_shm, "state.game_geometry.x"),
+            "normal game damage remains limited to the game rectangle on the root surface");
     require(contains(tdvp_shm, "xkb_state_key_get_one_sym"),
             "TDVP owns keyboard translation through the Wayland seat");
     require(contains(tdvp_shm, "dispatch_events(*state_, timeout_ms)"),
             "TDVP waits for compositor/input events only until the emulation deadline");
     require(contains(tdvp_shm, "descriptor.events |= POLLOUT"),
             "TDVP drains a back-pressured Wayland socket without waiting for unrelated input");
-    require(contains(tdvp_shm, "cancel_pending_present"),
+    require(contains(tdvp_shm, "retry_latest_frame"),
             "TDVP retains the latest frame when a presentation reservation fails");
     require(contains(tdvp_shm, "scale_game_pixels"), "TDVP does dedicated nearest-neighbour game scaling");
     require(contains(tdvp_shm, "static_generation"), "TDVP caches static scaled UI buffers");
+    require(contains(tdvp_shm, "static_initialized"),
+            "TDVP never mistakes an uninitialized generation-zero buffer for cached chrome");
     require(contains(renderer, "TdvpK230PresentationFrame"),
             "renderer exposes separate static chrome and dynamic GBA presentation data");
     require(contains(renderer, "{0, 79}"), "bottom slot 1");

@@ -30,15 +30,6 @@ int main()
     require(rect.width == 720 && rect.height == 480,
         "normal Playing damage covers exactly the 240x160 GBA viewport at 3x");
 
-    const auto surface = platform::tdvp_k230_game_surface_rect(
-        render::TdvpK230Layout::ScreenW,
-        render::TdvpK230Layout::ScreenH,
-        platform::kK230LandscapeWidth,
-        platform::kK230LandscapeHeight);
-    require(surface.x == rect.x && surface.y == rect.y &&
-                surface.width == rect.width && surface.height == rect.height,
-        "the game child surface uses the exact physical dynamic viewport");
-
     const auto invalid = platform::tdvp_k230_game_damage_rect(0, 189, 1232, 568);
     require(invalid.width == 0 && invalid.height == 0,
         "invalid presentation geometry does not damage an arbitrary buffer area");

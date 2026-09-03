@@ -48,8 +48,8 @@ struct TdvpK230WaylandShmState {
         wl_shm_pool* pool = nullptr;
         wl_buffer* buffer = nullptr;
         bool busy = false;
-        bool game_buffer = false;
         std::uint64_t static_generation = 0;
+        bool static_initialized = false;
     };
 
     struct KeyEvent {
@@ -59,11 +59,10 @@ struct TdvpK230WaylandShmState {
 
     // This connection is deliberately not borrowed from SDL. Owning it gives
     // the emulator exactly one reader of its Wayland event queue and prevents
-    // SDL's window dispatch from racing its frame callbacks or buffer releases.
+    // SDL's window dispatch from racing its buffer releases.
     wl_display* display = nullptr;
     wl_registry* registry = nullptr;
     wl_compositor* compositor = nullptr;
-    wl_subcompositor* subcompositor = nullptr;
     wl_shm* shm = nullptr;
     wl_seat* seat = nullptr;
     wl_keyboard* keyboard = nullptr;
@@ -71,9 +70,6 @@ struct TdvpK230WaylandShmState {
     wl_surface* root_surface = nullptr;
     xdg_surface* root_xdg_surface = nullptr;
     xdg_toplevel* root_toplevel = nullptr;
-    wl_surface* game_surface = nullptr;
-    wl_subsurface* game_subsurface = nullptr;
-    wl_callback* game_frame_callback = nullptr;
 
     xkb_context* xkb_context_handle = nullptr;
     xkb_keymap* xkb_keymap_handle = nullptr;
@@ -82,21 +78,17 @@ struct TdvpK230WaylandShmState {
     std::vector<KeyEvent> pending_keys;
     bool release_input_pending = false;
 
-    std::array<Buffer, 2> root_buffers{};
-    std::array<Buffer, 3> game_buffers{};
-    TdvpK230PresentScheduler game_scheduler;
+    std::array<Buffer, 3> buffers{};
+    TdvpK230PresentScheduler present_scheduler;
     std::vector<std::uint32_t> static_pixels;
     int width = kK230LandscapeWidth;
     int height = kK230LandscapeHeight;
     TdvpK230DamageRect game_geometry{};
     std::uint64_t static_generation = 0;
-    bool root_static_pending = false;
-    bool child_mapped = false;
+    bool static_pixels_valid = false;
     bool configured = false;
     bool running = true;
     std::chrono::steady_clock::time_point last_stats_log;
-    std::chrono::steady_clock::time_point last_frame_callback;
-    double last_frame_callback_interval_ms = 0.0;
 #endif
 };
 
@@ -127,15 +119,12 @@ void maybe_log_present_stats(State& state)
         return;
     }
     state.last_stats_log = now;
-    const auto& stats = state.game_scheduler.stats();
+    const auto& stats = state.present_scheduler.stats();
     std::cerr << "TDVP K230 native Wayland timing: requested=" << stats.present_requested
               << " committed=" << stats.present_committed
-              << " skipped_callback=" << stats.present_skipped_frame_callback
               << " skipped_no_buffer=" << stats.present_skipped_no_buffer
-              << " callbacks=" << stats.frame_callbacks
               << " releases=" << stats.buffer_releases
-              << " callback_interval_ms=" << state.last_frame_callback_interval_ms
-              << " root_static_pending=" << (state.root_static_pending ? "yes" : "no")
+              << " pacer=wl_buffer.release"
               << '\n';
 }
 
@@ -160,8 +149,8 @@ void buffer_release(void* data, wl_buffer*)
 {
     auto& buffer = *static_cast<State::Buffer*>(data);
     buffer.busy = false;
-    if (buffer.game_buffer && buffer.state != nullptr) {
-        buffer.state->game_scheduler.note_buffer_release();
+    if (buffer.state != nullptr) {
+        buffer.state->present_scheduler.note_buffer_release();
     }
 }
 
@@ -169,13 +158,12 @@ constexpr wl_buffer_listener kBufferListener{
     buffer_release,
 };
 
-bool create_buffer(State& state, State::Buffer& buffer, int width, int height, bool game_buffer)
+bool create_buffer(State& state, State::Buffer& buffer, int width, int height)
 {
     if (width <= 0 || height <= 0) {
         return false;
     }
     buffer.state = &state;
-    buffer.game_buffer = game_buffer;
     const int stride = width * static_cast<int>(sizeof(std::uint32_t));
     buffer.size = static_cast<std::size_t>(stride) * static_cast<std::size_t>(height);
     buffer.fd = create_shared_memory_file(buffer.size);
@@ -225,8 +213,8 @@ void destroy_buffer(State::Buffer& buffer)
     }
     buffer.size = 0;
     buffer.busy = false;
-    buffer.game_buffer = false;
     buffer.static_generation = 0;
+    buffer.static_initialized = false;
     buffer.state = nullptr;
 }
 
@@ -275,7 +263,7 @@ bool scale_static_pixels(State& state, const render::TdvpK230PresentationFrame& 
         }
     }
     state.static_generation = frame.static_generation;
-    state.root_static_pending = true;
+    state.static_pixels_valid = true;
     return true;
 }
 
@@ -296,7 +284,9 @@ bool scale_game_pixels(State& state, State::Buffer& buffer, const render::TdvpK2
             static_cast<std::size_t>(y) * static_cast<std::size_t>(frame.game_pitch_pixels);
         for (int dy = 0; dy < kScale; ++dy) {
             auto* target = buffer.pixels +
-                static_cast<std::size_t>(y * kScale + dy) * static_cast<std::size_t>(state.game_geometry.width);
+                static_cast<std::size_t>(state.game_geometry.y + y * kScale + dy) *
+                    static_cast<std::size_t>(state.width) +
+                static_cast<std::size_t>(state.game_geometry.x);
             for (int x = 0; x < T::GameW; ++x) {
                 const bool border = x == 0 || y == 0 || x == T::GameW - 1 || y == T::GameH - 1;
                 std::fill_n(target + x * kScale, kScale, border ? kGameBorder : source[x]);
@@ -305,26 +295,6 @@ bool scale_game_pixels(State& state, State::Buffer& buffer, const render::TdvpK2
     }
     return true;
 }
-
-void frame_callback_done(void* data, wl_callback* callback, std::uint32_t)
-{
-    auto& state = *static_cast<State*>(data);
-    if (state.game_frame_callback == callback) {
-        state.game_frame_callback = nullptr;
-    }
-    const auto now = std::chrono::steady_clock::now();
-    if (state.last_frame_callback.time_since_epoch().count() != 0) {
-        state.last_frame_callback_interval_ms =
-            std::chrono::duration<double, std::milli>(now - state.last_frame_callback).count();
-    }
-    state.last_frame_callback = now;
-    state.game_scheduler.note_frame_callback();
-    wl_callback_destroy(callback);
-}
-
-constexpr wl_callback_listener kFrameCallbackListener{
-    frame_callback_done,
-};
 
 SDL_Keycode sdl_keycode_from_xkb(xkb_keysym_t symbol)
 {
@@ -412,9 +382,6 @@ void registry_global(void* data, wl_registry* registry, std::uint32_t name, cons
     if (std::strcmp(interface, wl_compositor_interface.name) == 0) {
         state.compositor = static_cast<wl_compositor*>(
             wl_registry_bind(registry, name, &wl_compositor_interface, std::min(version, 4U)));
-    } else if (std::strcmp(interface, wl_subcompositor_interface.name) == 0) {
-        state.subcompositor = static_cast<wl_subcompositor*>(
-            wl_registry_bind(registry, name, &wl_subcompositor_interface, 1));
     } else if (std::strcmp(interface, wl_shm_interface.name) == 0) {
         state.shm = static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, 1));
     } else if (std::strcmp(interface, wl_seat_interface.name) == 0) {
@@ -577,7 +544,7 @@ bool dispatch_events(State& state, int timeout_ms)
     descriptor.events = POLLIN;
     // If the Wayland socket's send buffer is full, wait for writable space as
     // well as inbound callbacks.  Waiting only for POLLIN can leave a valid
-    // child-surface commit buffered until unrelated input arrives.
+    // root-surface commit buffered until unrelated input arrives.
     if (flush_result < 0) {
         descriptor.events |= POLLOUT;
     }
@@ -607,61 +574,24 @@ bool dispatch_events(State& state, int timeout_ms)
     return true;
 }
 
-void hide_game_surface(State& state)
+// A single root surface avoids the wl_subsurface transaction and frame-callback
+// pacing path.  Static chrome is copied only when a released buffer belongs to
+// an older generation; routine game frames rewrite just their own rectangle.
+bool copy_static_chrome_if_needed(State& state, State::Buffer& buffer)
 {
-    if (!state.child_mapped) {
-        return;
+    if (buffer.static_initialized && buffer.static_generation == state.static_generation) {
+        return false;
     }
-    if (state.game_frame_callback != nullptr) {
-        wl_callback_destroy(state.game_frame_callback);
-        state.game_frame_callback = nullptr;
-        state.game_scheduler.cancel_pending_present();
-    }
-    // The subsurface uses desynchronised commits. Unmapping it therefore does
-    // not wait for the root surface and cannot hold a paused/menu transition
-    // behind a stale game frame.
-    wl_surface_attach(state.game_surface, nullptr, 0, 0);
-    wl_surface_commit(state.game_surface);
-    state.child_mapped = false;
-}
-
-void commit_static_root(State& state)
-{
-    if (!state.root_static_pending || !state.configured) {
-        return;
-    }
-    auto* buffer = next_available_buffer(state.root_buffers);
-    if (buffer == nullptr) {
-        return;
-    }
-    std::memcpy(buffer->pixels, state.static_pixels.data(), buffer->size);
-    buffer->static_generation = state.static_generation;
-    buffer->busy = true;
-    wl_surface_attach(state.root_surface, buffer->buffer, 0, 0);
-    wl_surface_damage_buffer(state.root_surface, 0, 0, state.width, state.height);
-    wl_surface_commit(state.root_surface);
-    state.root_static_pending = false;
+    std::memcpy(buffer.pixels, state.static_pixels.data(), buffer.size);
+    buffer.static_generation = state.static_generation;
+    buffer.static_initialized = true;
+    return true;
 }
 
 void destroy_state_objects(State& state)
 {
-    if (state.game_frame_callback != nullptr) {
-        wl_callback_destroy(state.game_frame_callback);
-        state.game_frame_callback = nullptr;
-    }
-    for (auto& buffer : state.game_buffers) {
+    for (auto& buffer : state.buffers) {
         destroy_buffer(buffer);
-    }
-    for (auto& buffer : state.root_buffers) {
-        destroy_buffer(buffer);
-    }
-    if (state.game_subsurface != nullptr) {
-        wl_subsurface_destroy(state.game_subsurface);
-        state.game_subsurface = nullptr;
-    }
-    if (state.game_surface != nullptr) {
-        wl_surface_destroy(state.game_surface);
-        state.game_surface = nullptr;
     }
     if (state.root_toplevel != nullptr) {
         xdg_toplevel_destroy(state.root_toplevel);
@@ -702,10 +632,6 @@ void destroy_state_objects(State& state)
     if (state.shm != nullptr) {
         wl_shm_destroy(state.shm);
         state.shm = nullptr;
-    }
-    if (state.subcompositor != nullptr) {
-        wl_subcompositor_destroy(state.subcompositor);
-        state.subcompositor = nullptr;
     }
     if (state.compositor != nullptr) {
         wl_compositor_destroy(state.compositor);
@@ -750,17 +676,15 @@ bool TdvpK230WaylandShm::init()
     }
     wl_registry_add_listener(state->registry, &kRegistryListener, state.get());
     if (wl_display_roundtrip(state->display) < 0 || wl_display_roundtrip(state->display) < 0 ||
-        state->compositor == nullptr || state->subcompositor == nullptr || state->shm == nullptr ||
-        state->seat == nullptr || state->wm_base == nullptr) {
-        std::cerr << "TDVP K230 native Wayland: compositor is missing a required xdg, shm, seat, or subsurface global\n";
+        state->compositor == nullptr || state->shm == nullptr || state->seat == nullptr || state->wm_base == nullptr) {
+        std::cerr << "TDVP K230 native Wayland: compositor is missing a required xdg, shm, or seat global\n";
         destroy_state_objects(*state);
         return false;
     }
     xdg_wm_base_add_listener(state->wm_base, &kWmBaseListener, state.get());
 
     state->root_surface = wl_compositor_create_surface(state->compositor);
-    state->game_surface = wl_compositor_create_surface(state->compositor);
-    if (state->root_surface == nullptr || state->game_surface == nullptr) {
+    if (state->root_surface == nullptr) {
         std::cerr << "TDVP K230 native Wayland: wl_compositor_create_surface failed\n";
         destroy_state_objects(*state);
         return false;
@@ -785,37 +709,17 @@ bool TdvpK230WaylandShm::init()
     // continues to own the output transform, composition, and KMS page flips.
     xdg_toplevel_set_fullscreen(state->root_toplevel, nullptr);
 
-    state->game_geometry = tdvp_k230_game_surface_rect(
+    state->game_geometry = tdvp_k230_game_damage_rect(
         render::TdvpK230Layout::ScreenW, render::TdvpK230Layout::ScreenH, state->width, state->height);
     if (state->game_geometry.width <= 0 || state->game_geometry.height <= 0) {
-        std::cerr << "TDVP K230 native Wayland: invalid game subsurface geometry\n";
+        std::cerr << "TDVP K230 native Wayland: invalid game damage geometry\n";
         destroy_state_objects(*state);
         return false;
     }
-    state->game_subsurface = wl_subcompositor_get_subsurface(
-        state->subcompositor, state->game_surface, state->root_surface);
-    if (state->game_subsurface == nullptr) {
-        std::cerr << "TDVP K230 native Wayland: wl_subcompositor_get_subsurface failed\n";
-        destroy_state_objects(*state);
-        return false;
-    }
-    wl_subsurface_set_position(state->game_subsurface, state->game_geometry.x, state->game_geometry.y);
-    // Desynchronisation is crucial: a 60Hz child commit must not wait for a
-    // rare static root-surface update before Labwc can compose it.
-    wl_subsurface_set_desync(state->game_subsurface);
-    // A newly-created subsurface is initially stacked above its parent.
-    // wl_subsurface_place_above() only accepts another *sibling* subsurface
-    // as its reference, so the parent root surface must not be supplied here.
 
     state->static_pixels.resize(static_cast<std::size_t>(state->width) * static_cast<std::size_t>(state->height));
-    for (auto& buffer : state->root_buffers) {
-        if (!create_buffer(*state, buffer, state->width, state->height, false)) {
-            destroy_state_objects(*state);
-            return false;
-        }
-    }
-    for (auto& buffer : state->game_buffers) {
-        if (!create_buffer(*state, buffer, state->game_geometry.width, state->game_geometry.height, true)) {
+    for (auto& buffer : state->buffers) {
+        if (!create_buffer(*state, buffer, state->width, state->height)) {
             destroy_state_objects(*state);
             return false;
         }
@@ -825,7 +729,6 @@ bool TdvpK230WaylandShm::init()
     // until the compositor acknowledges the role, which avoids an undefined
     // first-frame size or a stale transform during greeter/desktop startup.
     wl_surface_commit(state->root_surface);
-    wl_surface_commit(state->game_surface);
     if (wl_display_flush(state->display) < 0 && errno != EAGAIN) {
         log_errno("initial wl_display_flush");
         destroy_state_objects(*state);
@@ -833,7 +736,7 @@ bool TdvpK230WaylandShm::init()
     }
     state->last_stats_log = std::chrono::steady_clock::now();
     state_ = std::move(state);
-    std::cout << "TDVP K230: using native xdg_toplevel with a desynchronised game wl_subsurface\n";
+    std::cout << "TDVP K230: using one native xdg_toplevel with triple wl_shm buffers paced by wl_buffer.release\n";
     return true;
 #else
     std::cerr << "TDVP K230 native Wayland: this build lacks the required Wayland xdg/xkb client ABI\n";
@@ -902,55 +805,42 @@ void TdvpK230WaylandShm::present(const render::TdvpK230PresentationFrame& frame)
         return;
     }
     State& state = *state_;
-    const bool static_changed = state.static_generation != frame.static_generation;
+    const bool static_changed = !state.static_pixels_valid || state.static_generation != frame.static_generation;
     if (static_changed && !scale_static_pixels(state, frame)) {
         return;
     }
 
     const bool has_game_frame = frame.game_frame_updated && frame.game_pixels_xrgb8888 != nullptr &&
         frame.game_width > 0 && frame.game_height > 0 && frame.game_pitch_pixels >= frame.game_width;
-    if (!has_game_frame) {
-        hide_game_surface(state);
-        commit_static_root(state);
-        if (wl_display_flush(state.display) < 0 && errno != EAGAIN) {
-            log_errno("wl_display_flush");
-            state.running = false;
-        }
+    if (static_changed || has_game_frame) {
+        state.present_scheduler.note_frame_available();
+    }
+
+    auto* buffer = next_available_buffer(state.buffers);
+    if (state.present_scheduler.try_begin_present(buffer != nullptr) != TdvpK230PresentDecision::Commit) {
         maybe_log_present_stats(state);
         return;
     }
 
-    // Root chrome changes are intentionally independent of the fast game
-    // path. A busy root buffer only delays a toast/rail update; it never holds
-    // mGBA, PulseAudio, keyboard handling, or a free game child buffer.
-    commit_static_root(state);
-
-    state.game_scheduler.note_frame_available();
-    auto* buffer = next_available_buffer(state.game_buffers);
-    if (state.game_scheduler.try_begin_present(buffer != nullptr) != TdvpK230PresentDecision::Commit) {
-        maybe_log_present_stats(state);
+    const bool full_damage = copy_static_chrome_if_needed(state, *buffer);
+    if (has_game_frame && !scale_game_pixels(state, *buffer, frame)) {
+        state.present_scheduler.retry_latest_frame();
         return;
     }
-    if (!scale_game_pixels(state, *buffer, frame)) {
-        state.game_scheduler.cancel_pending_present();
-        return;
-    }
-    state.game_frame_callback = wl_surface_frame(state.game_surface);
-    if (state.game_frame_callback == nullptr) {
-        std::cerr << "TDVP K230 native Wayland: wl_surface_frame failed\n";
-        state.game_scheduler.cancel_pending_present();
-        return;
-    }
-    wl_callback_add_listener(state.game_frame_callback, &kFrameCallbackListener, &state);
     buffer->busy = true;
-    wl_surface_attach(state.game_surface, buffer->buffer, 0, 0);
-    // Child buffer coordinates are exactly 720x480. It is the only surface
-    // damaged during normal game play; no 1232x568 root upload is induced.
-    wl_surface_damage_buffer(
-        state.game_surface, 0, 0, state.game_geometry.width, state.game_geometry.height);
-    wl_surface_commit(state.game_surface);
-    state.child_mapped = true;
-    state.game_scheduler.note_present_committed();
+    wl_surface_attach(state.root_surface, buffer->buffer, 0, 0);
+    if (full_damage || !has_game_frame) {
+        wl_surface_damage_buffer(state.root_surface, 0, 0, state.width, state.height);
+    } else {
+        wl_surface_damage_buffer(
+            state.root_surface,
+            state.game_geometry.x,
+            state.game_geometry.y,
+            state.game_geometry.width,
+            state.game_geometry.height);
+    }
+    wl_surface_commit(state.root_surface);
+    state.present_scheduler.note_present_committed();
     if (wl_display_flush(state.display) < 0 && errno != EAGAIN) {
         log_errno("wl_display_flush");
         state.running = false;
@@ -958,6 +848,23 @@ void TdvpK230WaylandShm::present(const render::TdvpK230PresentationFrame& frame)
     maybe_log_present_stats(state);
 #else
     (void)frame;
+#endif
+}
+
+bool TdvpK230WaylandShm::can_accept_present() const
+{
+#if defined(CZ_GBA_HAS_TDVP_NATIVE_WAYLAND)
+    if (!state_ || !state_->running || !state_->configured) {
+        return false;
+    }
+    for (const auto& buffer : state_->buffers) {
+        if (!buffer.busy) {
+            return true;
+        }
+    }
+    return false;
+#else
+    return false;
 #endif
 }
 

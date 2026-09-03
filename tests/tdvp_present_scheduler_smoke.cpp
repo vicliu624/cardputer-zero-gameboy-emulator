@@ -27,19 +27,11 @@ int main()
     scheduler.note_frame_available();
     require(scheduler.try_begin_present(true) == TdvpK230PresentDecision::Commit,
         "the first ready frame commits with a free buffer");
-    require(scheduler.frame_callback_pending(),
-        "a successful commit owns exactly one frame callback");
     require(scheduler.stats().present_committed == 0,
-        "reserving a callback is not counted as a submitted surface commit");
+        "reserving a buffer is not counted as a submitted surface commit");
     scheduler.note_present_committed();
 
     scheduler.note_frame_available();
-    require(scheduler.try_begin_present(true) == TdvpK230PresentDecision::WaitForFrameCallback,
-        "a newer frame replaces the pending video frame instead of committing early");
-    require(scheduler.has_latest_frame(),
-        "the newest frame remains available while the callback is outstanding");
-
-    scheduler.note_frame_callback();
     require(scheduler.try_begin_present(false) == TdvpK230PresentDecision::NoFreeBuffer,
         "a busy compositor buffer never blocks the emulator loop");
     require(scheduler.has_latest_frame(),
@@ -50,22 +42,19 @@ int main()
         "a released buffer permits the latest frame to commit");
     scheduler.note_present_committed();
 
-    scheduler.note_frame_callback();
     scheduler.note_frame_available();
     require(scheduler.try_begin_present(true) == TdvpK230PresentDecision::Commit,
-        "a later frame can reserve a callback");
-    scheduler.cancel_pending_present();
-    require(!scheduler.frame_callback_pending() && scheduler.has_latest_frame(),
-        "a failed callback allocation restores the newest frame for retry");
+        "a later frame can reserve another released buffer");
+    scheduler.retry_latest_frame();
+    require(scheduler.has_latest_frame(),
+        "a failed buffer preparation restores the newest frame for retry");
     require(scheduler.stats().present_committed == 2,
-        "a cancelled reservation is never reported as a committed frame");
+        "a retried reservation is never reported as a committed frame");
 
     const auto& stats = scheduler.stats();
     require(stats.present_requested == 3, "each produced video frame is counted");
     require(stats.present_committed == 2, "only allowed commits are counted");
-    require(stats.present_skipped_frame_callback == 1, "callback pacing skips an intermediate frame");
     require(stats.present_skipped_no_buffer == 1, "busy buffers are observable without blocking");
-    require(stats.frame_callbacks == 2 && stats.buffer_releases == 1,
-        "callback and release telemetry is retained");
+    require(stats.buffer_releases == 1, "buffer-release telemetry is retained");
     return 0;
 }
