@@ -739,7 +739,7 @@ bool TdvpK230WaylandShm::init()
     auto state = std::make_unique<State>();
     state->display = wl_display_connect(nullptr);
     if (state->display == nullptr) {
-        std::cerr << "TDVP K230 native Wayland: wl_display_connect failed\n";
+        log_errno("wl_display_connect");
         return false;
     }
     state->registry = wl_display_get_registry(state->display);
