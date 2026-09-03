@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
@@ -38,8 +39,8 @@ public:
     bool init(const PlatformConfig& config);
     void shutdown();
     void poll_events(input::InputFrame& input);
+    void wait_until(std::chrono::steady_clock::time_point deadline);
     void present(const std::uint32_t* canvas_xrgb8888, int canvas_width, int canvas_height, int pitch_bytes);
-    bool tdvp_k230_presentation_ready();
     void present_tdvp_k230(const render::TdvpK230PresentationFrame& frame);
     bool should_quit() const;
 
@@ -54,6 +55,7 @@ private:
     int canvas_width_ = 320;
     int canvas_height_ = 170;
     bool should_quit_ = false;
+    bool sdl_initialized_ = false;
 };
 
 } // namespace czgba::platform

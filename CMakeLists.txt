@@ -25,6 +25,10 @@ option(CZ_GBA_SDL_STATIC "Build bundled SDL2 as a static library" OFF)
 option(CZ_GBA_REQUIRE_K230_DRM "Fail configuration unless Linux DRM/KMS UAPI headers are available" OFF)
 option(CZ_GBA_REQUIRE_K230_WAYLAND_SHM "Fail configuration unless the K230 Wayland wl_shm client ABI is available" OFF)
 set(CZ_GBA_TDVP_WAYLAND_SDK_OVERLAY "" CACHE PATH "Firmware-matched TDVP Wayland client development overlay")
+set(CZ_GBA_TDVP_WAYLAND_SCANNER "" CACHE FILEPATH
+    "Host wayland-scanner used to generate the TDVP native client protocol")
+set(CZ_GBA_TDVP_WAYLAND_PROTOCOLS_DIR "" CACHE PATH
+    "Firmware-matched wayland-protocols directory containing stable/xdg-shell")
 option(CZ_GBA_USE_SYSTEM_MGBA "Use system libmgba instead of bundled mGBA" OFF)
 option(CZ_GBA_BUNDLE_MGBA "Build bundled mGBA from extern/mgba" ON)
 set(CZ_GBA_MGBA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/mgba" CACHE PATH "mGBA source checkout")
@@ -345,16 +349,78 @@ if (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Buildroot)$")
         HINTS ${CZ_GBA_WAYLAND_HINTS}
         PATH_SUFFIXES lib
         ${CZ_GBA_WAYLAND_ROOT_SEARCH})
-    if (CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR AND CZ_GBA_WAYLAND_CLIENT_LIBRARY AND CZ_GBA_FFI_LIBRARY)
+    find_path(CZ_GBA_XKBCOMMON_INCLUDE_DIR
+        NAMES xkbcommon/xkbcommon.h
+        HINTS ${CZ_GBA_WAYLAND_HINTS}
+        PATH_SUFFIXES include
+        ${CZ_GBA_WAYLAND_ROOT_SEARCH})
+    find_library(CZ_GBA_XKBCOMMON_LIBRARY
+        NAMES xkbcommon
+        HINTS ${CZ_GBA_WAYLAND_HINTS}
+        PATH_SUFFIXES lib
+        ${CZ_GBA_WAYLAND_ROOT_SEARCH})
+
+    if (CZ_GBA_TDVP_WAYLAND_SCANNER)
+        set(CZ_GBA_WAYLAND_SCANNER_EXECUTABLE "${CZ_GBA_TDVP_WAYLAND_SCANNER}")
+    else()
+        find_program(CZ_GBA_WAYLAND_SCANNER_EXECUTABLE NAMES wayland-scanner)
+    endif()
+    if (CZ_GBA_TDVP_WAYLAND_PROTOCOLS_DIR)
+        set(CZ_GBA_WAYLAND_PROTOCOLS_DIR "${CZ_GBA_TDVP_WAYLAND_PROTOCOLS_DIR}")
+    else()
+        find_path(CZ_GBA_WAYLAND_PROTOCOLS_DIR
+            NAMES stable/xdg-shell/xdg-shell.xml
+            HINTS ${CZ_GBA_WAYLAND_HINTS}
+            PATH_SUFFIXES share/wayland-protocols share
+            ${CZ_GBA_WAYLAND_ROOT_SEARCH})
+    endif()
+    set(CZ_GBA_XDG_SHELL_XML "${CZ_GBA_WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
+
+    if (CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR AND CZ_GBA_WAYLAND_CLIENT_LIBRARY AND CZ_GBA_FFI_LIBRARY AND
+        CZ_GBA_XKBCOMMON_INCLUDE_DIR AND CZ_GBA_XKBCOMMON_LIBRARY AND
+        CZ_GBA_WAYLAND_SCANNER_EXECUTABLE AND EXISTS "${CZ_GBA_WAYLAND_SCANNER_EXECUTABLE}" AND
+        EXISTS "${CZ_GBA_XDG_SHELL_XML}")
+        # Generate xdg-shell bindings with the host tool and XML from the same
+        # completed Buildroot output that supplies the target client ABI. This
+        # keeps the direct native client independent from SDL's private queue.
+        set(CZ_GBA_WAYLAND_PROTOCOL_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/wayland")
+        set(CZ_GBA_XDG_SHELL_HEADER "${CZ_GBA_WAYLAND_PROTOCOL_DIR}/xdg-shell-client-protocol.h")
+        set(CZ_GBA_XDG_SHELL_SOURCE "${CZ_GBA_WAYLAND_PROTOCOL_DIR}/xdg-shell-protocol.c")
+        file(MAKE_DIRECTORY "${CZ_GBA_WAYLAND_PROTOCOL_DIR}")
+        add_custom_command(
+            OUTPUT "${CZ_GBA_XDG_SHELL_HEADER}"
+            COMMAND "${CZ_GBA_WAYLAND_SCANNER_EXECUTABLE}" client-header
+                    "${CZ_GBA_XDG_SHELL_XML}" "${CZ_GBA_XDG_SHELL_HEADER}"
+            DEPENDS "${CZ_GBA_XDG_SHELL_XML}"
+            VERBATIM)
+        add_custom_command(
+            OUTPUT "${CZ_GBA_XDG_SHELL_SOURCE}"
+            COMMAND "${CZ_GBA_WAYLAND_SCANNER_EXECUTABLE}" private-code
+                    "${CZ_GBA_XDG_SHELL_XML}" "${CZ_GBA_XDG_SHELL_SOURCE}"
+            DEPENDS "${CZ_GBA_XDG_SHELL_XML}"
+            VERBATIM)
+        add_custom_target(cardputer-zero-gba-tdvp-wayland-protocols
+            DEPENDS "${CZ_GBA_XDG_SHELL_HEADER}" "${CZ_GBA_XDG_SHELL_SOURCE}")
+        add_dependencies(cardputer-zero-gba cardputer-zero-gba-tdvp-wayland-protocols)
+        target_sources(cardputer-zero-gba PRIVATE "${CZ_GBA_XDG_SHELL_SOURCE}")
+        target_include_directories(cardputer-zero-gba SYSTEM PRIVATE
+            "${CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR}"
+            "${CZ_GBA_XKBCOMMON_INCLUDE_DIR}"
+            "${CZ_GBA_WAYLAND_PROTOCOL_DIR}")
+        target_link_libraries(cardputer-zero-gba PRIVATE
+            "${CZ_GBA_WAYLAND_CLIENT_LIBRARY}"
+            "${CZ_GBA_XKBCOMMON_LIBRARY}"
+            "${CZ_GBA_FFI_LIBRARY}")
+        target_compile_definitions(cardputer-zero-gba PRIVATE
+            CZ_GBA_HAS_TDVP_WAYLAND_SHM=1
+            CZ_GBA_HAS_TDVP_NATIVE_WAYLAND=1)
         set(CZ_GBA_HAS_TDVP_WAYLAND_SHM ON)
-        target_include_directories(cardputer-zero-gba SYSTEM PRIVATE "${CZ_GBA_WAYLAND_CLIENT_INCLUDE_DIR}")
-        target_link_libraries(cardputer-zero-gba PRIVATE "${CZ_GBA_WAYLAND_CLIENT_LIBRARY}" "${CZ_GBA_FFI_LIBRARY}")
-        target_compile_definitions(cardputer-zero-gba PRIVATE CZ_GBA_HAS_TDVP_WAYLAND_SHM=1)
     endif()
 endif()
 
 if (CZ_GBA_REQUIRE_K230_WAYLAND_SHM AND NOT CZ_GBA_HAS_TDVP_WAYLAND_SHM)
-    message(FATAL_ERROR "TDVP K230 packaging requires the firmware-matched Wayland wl_shm client ABI")
+    message(FATAL_ERROR
+        "TDVP K230 packaging requires firmware-matched Wayland wl_shm, xdg-shell, xkbcommon, and wayland-scanner support")
 endif()
 
 target_include_directories(cardputer-zero-gba-audio-core-smoke

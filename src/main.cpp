@@ -200,23 +200,19 @@ int main(int argc, char** argv)
             app.read_audio_samples(48000, kAudioMaxFramesPerTick);
         }
 
-        // The TDVP presenter owns a single compositor-paced commit slot.
-        // Let emulation and audio continue at their native clock, but avoid
-        // normalizing a 240x160 frame or rebuilding presentation data while
-        // that slot is unavailable. When it becomes available we consume the
-        // newest mGBA framebuffer, so this never queues stale video.
-        if (presentation_profile != czgba::platform::PresentationProfile::TdvpK230 ||
-            platform.tdvp_k230_presentation_ready()) {
-            renderer.draw(app.render_state());
-            if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230) {
-                platform.present_tdvp_k230(renderer.tdvp_k230_presentation());
-            } else {
-                platform.present(
-                    renderer.canvas().data(),
-                    renderer.canvas().width(),
-                    renderer.canvas().height(),
-                    renderer.canvas().pitch_bytes());
-            }
+        // Presentation has its own Wayland-controlled drop policy. Rendering
+        // the lightweight TDVP frame descriptor every emulation tick keeps
+        // state transitions responsive; the presenter alone chooses whether
+        // a child-surface wl_shm commit is currently eligible.
+        renderer.draw(app.render_state());
+        if (presentation_profile == czgba::platform::PresentationProfile::TdvpK230) {
+            platform.present_tdvp_k230(renderer.tdvp_k230_presentation());
+        } else {
+            platform.present(
+                renderer.canvas().data(),
+                renderer.canvas().width(),
+                renderer.canvas().height(),
+                renderer.canvas().pitch_bytes());
         }
         ++presented_frames;
 
@@ -225,7 +221,7 @@ int main(int argc, char** argv)
         }
 
         next_frame += frame_duration;
-        std::this_thread::sleep_until(next_frame);
+        platform.wait_until(next_frame);
         if (clock::now() > next_frame + std::chrono::milliseconds(100)) {
             next_frame = clock::now();
         }

@@ -32,10 +32,11 @@ K230's physical shell chrome is not part of this application UI.
   XRGB8888
 - GBA viewport: native 240x160; Cardputer Zero at `x=40,y=0`, TDVP K230 at
   `x=85,y=3`
-- Window policy: Cardputer Zero uses a fixed 320x170 borderless surface;
-  TDVP K230 is a labwc Wayland client. SDL owns only its Wayland window and
-  input events; the application submits CPU-owned XRGB `wl_shm` buffers and
-  integer-scales the `410x189` canvas to `1230x567` at `(1,0)`, while labwc
+- Window policy: Cardputer Zero uses a fixed 320x170 borderless SDL surface;
+  TDVP K230 is a native labwc Wayland `xdg_toplevel` client. It owns its
+  Wayland event queue and `wl_seat` keyboard, submits CPU-owned XRGB `wl_shm`
+  buffers, and integer-scales the `410x189` canvas to `1230x567` at `(1,0)`.
+  Its dynamic GBA viewport is a desynchronised child surface while labwc
   retains the DRM/KMS CRTC
 - Package delivery: Debian `.deb`, built reproducibly through Docker Compose
 - ROM policy: user-provided `.gba` files only; no bundled ROMs or BIOS

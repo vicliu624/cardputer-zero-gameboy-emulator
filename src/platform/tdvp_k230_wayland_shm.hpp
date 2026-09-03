@@ -1,19 +1,21 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
+#include "input/input_frame.hpp"
 #include "render/tdvp_k230_presentation.hpp"
-
-struct SDL_Window;
 
 namespace czgba::platform {
 
 struct TdvpK230WaylandShmState;
 
-// A normal SDL-created Wayland window supplies focus and keyboard events. This
-// presenter attaches CPU-owned XRGB wl_shm buffers directly to that window's
-// wl_surface, avoiding SDL_Renderer, EGL and software GLES rasterisation.
+// TDVP owns one native Wayland client connection. The root xdg_toplevel keeps
+// static chrome in a full-output wl_shm buffer while a desynchronised child
+// wl_subsurface contains only the changing 720x480 GBA viewport. SDL remains
+// available to the process for PulseAudio, but never owns this display or its
+// event queue.
 class TdvpK230WaylandShm {
 public:
     TdvpK230WaylandShm();
@@ -22,12 +24,12 @@ public:
     TdvpK230WaylandShm(const TdvpK230WaylandShm&) = delete;
     TdvpK230WaylandShm& operator=(const TdvpK230WaylandShm&) = delete;
 
-    bool init(SDL_Window* window);
+    bool init();
     void shutdown();
-    // Returns true only when a new frame can be built and committed without
-    // waiting for a compositor callback or writing a busy wl_buffer.
-    bool ready_for_frame();
+    void poll_events(input::InputFrame& input);
+    void wait_until(std::chrono::steady_clock::time_point deadline);
     void present(const render::TdvpK230PresentationFrame& frame);
+    bool should_quit() const;
 
 private:
     std::unique_ptr<TdvpK230WaylandShmState> state_;

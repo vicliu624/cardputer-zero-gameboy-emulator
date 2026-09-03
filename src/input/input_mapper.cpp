@@ -86,6 +86,12 @@ void InputMapper::handle_key(SDL_Keycode key, bool pressed, InputFrame& frame)
     frame.gba = gba_;
 }
 
+void InputMapper::release_all(InputFrame& frame)
+{
+    gba_ = {};
+    frame.gba = gba_;
+}
+
 const core::GbaInputState& InputMapper::gba_state() const
 {
     return gba_;

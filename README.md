@@ -52,8 +52,13 @@ presented through CPU-owned XRGB `wl_shm` buffers to the labwc Wayland
 compositor at a 3x integer scale. The resulting game viewport is 720x480
 physical pixels, and the full application canvas occupies 1230x567 at `(1,0)`
 on the landscape output. Labwc retains DRM/KMS CRTC ownership and the panel
-transform; SDL supplies the Wayland window and input only. The K230 profile
-does not use SDL_Renderer, EGL, OpenGL ES, fbdev, or direct modesetting.
+transform. The TDVP profile owns a standard native Wayland `xdg_toplevel`, its
+client event queue, and its `wl_seat` keyboard; SDL is retained for its proven
+queued PulseAudio implementation rather than for window ownership. Static
+chrome is committed on the full root surface only when it changes, while the
+changing 720x480 GBA viewport is a desynchronised child `wl_subsurface` with
+three CPU-owned XRGB `wl_shm` buffers. The K230 profile does not use
+SDL_Renderer, EGL, OpenGL ES, fbdev, or direct modesetting.
 Audio uses SDL's PulseAudio backend on the TDVP desktop, with ALSA compiled as
 a dynamic fallback; mGBA's queued sample stream is therefore delivered to the
 firmware-owned audio service rather than discarded after generation.

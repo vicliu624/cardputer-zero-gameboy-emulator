@@ -138,6 +138,26 @@ int main()
     require(contains(tdvp_shm, "wl_surface_damage_buffer"), "TDVP uses buffer-space damage for wl_shm presentation");
     require(!contains(tdvp_shm, "while (wl_display_dispatch("),
             "TDVP never blocks emulation waiting for a compositor-owned buffer");
+    require(!contains(tdvp_shm, "SDL_GetWindowWMInfo"),
+            "TDVP native client does not borrow SDL's Wayland display or surface");
+    require(contains(tdvp_shm, "wl_display_connect(nullptr)"),
+            "TDVP owns its native Wayland display connection");
+    require(contains(tdvp_shm, "xdg_wm_base_get_xdg_surface"),
+            "TDVP uses a standard xdg toplevel root surface");
+    require(contains(tdvp_shm, "wl_subcompositor_get_subsurface"),
+            "TDVP puts the dynamic GBA viewport in a child subsurface");
+    require(contains(tdvp_shm, "wl_subsurface_set_desync"),
+            "TDVP child surface does not wait for static root commits");
+    require(!contains(tdvp_shm, "wl_subsurface_place_above(state.game_subsurface"),
+            "TDVP never passes its parent surface where Wayland requires a sibling subsurface");
+    require(contains(tdvp_shm, "state.game_surface, 0, 0, state.game_geometry.width"),
+            "normal game damage is child-local rather than full-output damage");
+    require(contains(tdvp_shm, "xkb_state_key_get_one_sym"),
+            "TDVP owns keyboard translation through the Wayland seat");
+    require(contains(tdvp_shm, "dispatch_events(*state_, timeout_ms)"),
+            "TDVP waits for compositor/input events only until the emulation deadline");
+    require(contains(tdvp_shm, "descriptor.events |= POLLOUT"),
+            "TDVP drains a back-pressured Wayland socket without waiting for unrelated input");
     require(contains(tdvp_shm, "cancel_pending_present"),
             "TDVP retains the latest frame when a presentation reservation fails");
     require(contains(tdvp_shm, "scale_game_pixels"), "TDVP does dedicated nearest-neighbour game scaling");
@@ -177,6 +197,10 @@ int main()
             "TDVP composable mode disables bundled mGBA");
     require(contains(cmake, "CZ_GBA_REQUIRE_K230_DRM"), "K230 package can require DRM/KMS UAPI headers");
     require(contains(cmake, "CZ_GBA_REQUIRE_K230_WAYLAND_SHM"), "K230 package requires Wayland shared-memory client ABI");
+    require(contains(cmake, "CZ_GBA_TDVP_WAYLAND_SCANNER"),
+            "K230 build generates xdg client bindings from the matching SDK");
+    require(contains(cmake, "CZ_GBA_XKBCOMMON_LIBRARY"),
+            "K230 native client links the matching xkbcommon ABI");
     const auto tdvp_drm = read_file(root / "src" / "platform" / "tdvp_k230_drm.cpp");
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_CREATE_DUMB"), "TDVP creates native KMS dumb buffers");
     require(contains(tdvp_drm, "DRM_IOCTL_MODE_SETCRTC"), "TDVP programs a KMS CRTC");

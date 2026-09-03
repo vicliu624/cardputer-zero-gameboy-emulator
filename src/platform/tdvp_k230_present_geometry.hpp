@@ -36,4 +36,18 @@ constexpr TdvpK230DamageRect tdvp_k230_game_damage_rect(
     };
 }
 
+// The game child wl_subsurface occupies exactly the same physical rectangle
+// that r11 used as a partial-damage region. Naming the surface geometry
+// separately makes the r12 parent/child split explicit and prevents a future
+// presenter from accidentally treating child-local buffer coordinates as
+// full-output coordinates.
+constexpr TdvpK230DamageRect tdvp_k230_game_surface_rect(
+    int source_width,
+    int source_height,
+    int output_width,
+    int output_height)
+{
+    return tdvp_k230_game_damage_rect(source_width, source_height, output_width, output_height);
+}
+
 } // namespace czgba::platform

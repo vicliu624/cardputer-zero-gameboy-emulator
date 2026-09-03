@@ -2,8 +2,10 @@
 
 #include <SDL.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 #include "render/layout.hpp"
 #include "render/tdvp_k230_presentation.hpp"
@@ -40,12 +42,23 @@ bool SdlPlatform::init(const PlatformConfig& config)
             tdvp_k230_drm_ = std::move(drm);
             return true;
         }
-        std::cerr << "TDVP K230 direct DRM presentation unavailable; falling back to SDL Wayland\n";
+        std::cerr << "TDVP K230 direct DRM presentation unavailable; falling back to native Wayland\n";
     } else if (presentation_profile_ == PresentationProfile::TdvpK230) {
         // Labwc owns DRM master on the supported device. Its Wayland client
         // path remains backed by DRM/KMS, but prevents an application from
         // modesetting the system compositor's CRTC.
-        std::cout << "TDVP K230: using the SDL Wayland client presentation path\n";
+        std::cout << "TDVP K230: using the native Wayland client presentation path\n";
+    }
+
+    if (presentation_profile_ == PresentationProfile::TdvpK230) {
+        auto shm = std::make_unique<TdvpK230WaylandShm>();
+        if (!shm->init()) {
+            std::cerr << "TDVP K230 native Wayland presentation unavailable; refusing software GLES fallback\n";
+            shutdown();
+            return false;
+        }
+        tdvp_k230_wayland_shm_ = std::move(shm);
+        return true;
     }
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
@@ -59,6 +72,7 @@ bool SdlPlatform::init(const PlatformConfig& config)
         std::cerr << "SDL_Init failed: " << SDL_GetError() << '\n';
         return false;
     }
+    sdl_initialized_ = true;
 
     const auto profile = presentation_profile_spec(config.presentation_profile);
     const bool use_fullscreen = config.fullscreen || profile.fullscreen;
@@ -89,17 +103,6 @@ bool SdlPlatform::init(const PlatformConfig& config)
     }
     if (use_fullscreen) {
         SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    }
-
-    if (presentation_profile_ == PresentationProfile::TdvpK230) {
-        auto shm = std::make_unique<TdvpK230WaylandShm>();
-        if (!shm->init(window_)) {
-            std::cerr << "TDVP K230 wl_shm presentation unavailable; refusing software GLES fallback\n";
-            shutdown();
-            return false;
-        }
-        tdvp_k230_wayland_shm_ = std::move(shm);
-        return true;
     }
 
     renderer_ = SDL_CreateRenderer(
@@ -155,7 +158,10 @@ void SdlPlatform::shutdown()
         SDL_DestroyWindow(window_);
         window_ = nullptr;
     }
-    SDL_Quit();
+    if (sdl_initialized_) {
+        SDL_Quit();
+        sdl_initialized_ = false;
+    }
 }
 
 void SdlPlatform::poll_events(input::InputFrame& input)
@@ -163,6 +169,11 @@ void SdlPlatform::poll_events(input::InputFrame& input)
     if (tdvp_k230_drm_) {
         tdvp_k230_drm_->poll_events(input);
         should_quit_ = tdvp_k230_drm_->should_quit();
+        return;
+    }
+    if (tdvp_k230_wayland_shm_) {
+        tdvp_k230_wayland_shm_->poll_events(input);
+        should_quit_ = tdvp_k230_wayland_shm_->should_quit();
         return;
     }
 
@@ -220,12 +231,14 @@ void SdlPlatform::present(const std::uint32_t* canvas_xrgb8888, int canvas_width
     SDL_RenderPresent(renderer_);
 }
 
-bool SdlPlatform::tdvp_k230_presentation_ready()
+void SdlPlatform::wait_until(std::chrono::steady_clock::time_point deadline)
 {
-    // The experimental direct-DRM mode remains ungated; the supported
-    // Wayland path can coalesce intermediate emulation frames before the
-    // expensive XRGB conversion is performed.
-    return !tdvp_k230_wayland_shm_ || tdvp_k230_wayland_shm_->ready_for_frame();
+    if (tdvp_k230_wayland_shm_) {
+        tdvp_k230_wayland_shm_->wait_until(deadline);
+        should_quit_ = tdvp_k230_wayland_shm_->should_quit();
+        return;
+    }
+    std::this_thread::sleep_until(deadline);
 }
 
 void SdlPlatform::present_tdvp_k230(const render::TdvpK230PresentationFrame& frame)
@@ -237,7 +250,7 @@ void SdlPlatform::present_tdvp_k230(const render::TdvpK230PresentationFrame& fra
 
 bool SdlPlatform::should_quit() const
 {
-    return should_quit_;
+    return should_quit_ || (tdvp_k230_wayland_shm_ && tdvp_k230_wayland_shm_->should_quit());
 }
 
 } // namespace czgba::platform
